@@ -7,6 +7,8 @@
 #include <fstream> // ofstream
 #include <iostream> // std::cout
 #include <exception> // std::invalid_argument
+#include <functional> // std::function
+
 ///
 /// @brief Orbit Counting Algorithm
 ///
@@ -15,7 +17,7 @@
 class ORCA
 {
   ///
-  /// @brief Nested class for a hashable key for ordered pairs
+  /// @brief Nested class for a hashable key for pairs of nodes
   ///
   class key_pair
   {
@@ -60,7 +62,7 @@ class ORCA
   }; // end class key_pair
 
   ///
-  /// @brief Nested class for a hashable key for ordered triple
+  /// @brief Nested class for a hashable key for triplet of nodes
   ///
   class key_triple
   {
@@ -118,6 +120,7 @@ class ORCA
         return (x.a << 16) ^ (x.b << 8) ^ (x.c << 0);
       }
     };
+
   }; // end class key_triple
 
   // Type aliases for readibility
@@ -126,10 +129,8 @@ class ORCA
 
   // ORCA alorithm state (member data)
   common2_type common2;
+  // stores the number of nodes that are adjacent to some triplets of nodes
   common3_type common3;
-
-  common2_type::iterator common2_it;
-  common3_type::iterator common3_it;
 
   // number of nodes
   int n;
@@ -148,22 +149,45 @@ class ORCA
   // orbit[x][o] - how many times does node x participate in orbit o
   std::vector<std::vector<int>> orbit;
 
-  const int adj_chunk = 8 * sizeof(int);
-  bool adjacent_matrix(int x, int y) { return adj_matrix[(x * n + y) / adj_chunk] & (1 << ((x * n + y) % adj_chunk)); }
-  bool (*adjacent)(int, int);
-
   ///
   /// @brief Return the value stored at the key, else 0
   ///
-  /// @warning very suspicious
+  /// @note avoid inflation of the map due to lookups of absent elements.
   ///
-  template<class Map>
-  auto get(const Map &common, typename Map::key_type const& x)
+  template<class key, class T>
+  T find_or_zero(key x, const std::unordered_map<key, T, typename key::hash>& map)
   {
-    return common.find(x)) != common.end()) ? (common3_it->second) : 0;
+    auto it = map.find(x);
+    return (it == map.end()) ? it->second : 0;
   }
+
+  ///
+  /// @brief Number of nodes that are adjacent to some pair of nodes
+  ///
+  int common2_get(const key_pair & x) const
+  {
+    return find_or_zero(x, this->common2);
+  }
+
+  ///
+  /// @brief Number of nodes that are adjacent to some triplets of nodes
+  ///
+  int common3_get(const key_triple & x) const
+  {
+    return find_or_zero(x, this->common3);
+  }
+
+  // Adjacence strategy
+
+  static constexpr int adj_chunk = 8 * sizeof(int);
+
+  /// Store a different runtime strategy: can be adjacent_list (default) or adjacent_matrix
+  std::function< bool( int, int ) > adjacent;
+
   ///
   /// @brief Checks if an element equivalent to value appears within the range x, y
+  ///
+  /// @note Default strategy
   ///
   bool adjacent_list(int x, int y) const
   {
@@ -171,22 +195,31 @@ class ORCA
     auto last = std::advance(this->adj.cbegin(), this->deg.at(x));
     return std::binary_search(first, last, y);
   }
+
   ///
-  /// @brief
+  /// @brief Checks if an element equivalent to value appears within the range x, y
+  ///
+  /// @note Strategy is set up adjacency matrix if it's smaller than 100MB
   ///
   bool adjacent_matrix(int x, int y) const
   {
-    return adj_matrix[(x * n + y) / adj_chunk] & (1 << ((x * n + y) % adj_chunk));
+    return this->adj_matrix[(x * this->n + y) / this->adj_chunk] & (1 << ((x *this->n + y) % this->adj_chunk));
   }
 
-
   /** count graphlets on max 5 nodes */
-  void count() {
+  void count_orbits()
+  {
+    using PAIR = key_pair;
+    using TRIPLE = key_triple;
+
     clock_t startTime, endTime;
     startTime = clock();
+
     clock_t startTime_all, endTime_all;
     startTime_all = startTime;
-    int frac, frac_prev;
+
+    int frac;
+    int frac_prev;
 
     // precompute common nodes
     printf("stage 1 - precomputing common nodes\n");
@@ -215,13 +248,11 @@ class ORCA
     }
 
     // precompute triangles that span over edges
-    int *tri = (int *)calloc(m, sizeof(int));
+    std::vector<int> tri(m);
+
     for (int i = 0; i < m; i++) {
       int x = edges[i].a, y = edges[i].b;
       for (int xi = 0, yi = 0; xi < deg[x] && yi < deg[y];) {
-        // // DEBUG
-        // if (xi < 100 && i == 23)
-        //     printf("%d %d", adj[x][xi], adj[y][yi]);
         if (adj[x][xi] == adj[y][yi]) {
           tri[i]++;
           xi++;
@@ -240,9 +271,18 @@ class ORCA
 
     // count full graphlets
     printf("stage 2 - counting full graphlets\n");
-    int64 *C5 = (int64 *)calloc(n, sizeof(int64));
-    int *neigh = (int *)malloc(n * sizeof(int)), nn;
-    int *neigh2 = (int *)malloc(n * sizeof(int)), nn2;
+
+    std::vector<int64> C5(n);
+    std::vector<int> neigh(n);
+    std::vector<int> neigh2(n);
+
+    int nn;
+    int nn2;
+
+    // int64 *C5 = (int64 *)calloc(n, sizeof(int64));
+    // int *neigh = (int *)malloc(n * sizeof(int)), nn;
+    // int *neigh2 = (int *)malloc(n * sizeof(int)), nn2;
+
     frac_prev = -1;
 
     for (int x = 0; x < n; x++) {
@@ -292,10 +332,12 @@ class ORCA
     printf("%.2f sec\n", (double)(endTime - startTime) / CLOCKS_PER_SEC);
     startTime = endTime;
 
-    int *common_x = (int *)calloc(n, sizeof(int));
-    int *common_x_list = (int *)malloc(n * sizeof(int)), ncx = 0;
-    int *common_a = (int *)calloc(n, sizeof(int));
-    int *common_a_list = (int *)malloc(n * sizeof(int)), nca = 0;
+    std::vector<int> common_x(n);
+    std::vector<int> common_x_list(n);
+    int ncx = 0;
+    std::vector<int> common_a(n);
+    std::vector<int> common_a_list(n);
+    int nca = 0;
 
     // set up a system of equations relating orbit counts
     printf("stage 3 - building systems of equations\n");
@@ -613,15 +655,6 @@ class ORCA
     endTime_all = endTime;
     printf("total: %.2f sec\n", (double)(endTime_all - startTime_all) / CLOCKS_PER_SEC);
 
-    // Free all memory allocated in this function
-    free(tri);
-    free(C5);
-    free(neigh);
-    free(neigh2);
-    free(common_x);
-    free(common_x_list);
-    free(common_a);
-    free(common_a_list);
   }
 
   std::fstream fin, fout;  // input and output files
