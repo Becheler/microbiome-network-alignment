@@ -14,6 +14,7 @@
 ///
 /// @note Encapsulate Orca computation logic
 ///
+template<class Strategy>
 class ORCA
 {
   ///
@@ -77,10 +78,7 @@ class ORCA
     ///
     /// @brief Constructor using initialization list
     ///
-    key_triple(int a0, int b0, int c0):
-    a(a0),
-    b(b0),
-    c(c0)
+    key_triple(int a0, int b0, int c0): a(a0), b(b0), c(c0)
     {
       if (a > b) swap(a, b);
       if (b > c) swap(b, c);
@@ -106,9 +104,7 @@ class ORCA
     ///
     bool operator==(const self_type &other) const
     {
-      return this->a == other.a &&
-      this->b == other.b &&
-      this->c == other.c;
+      return this->a == other.a && this->b == other.b && this->c == other.c;
     }
     ///
     /// @brief Hashable and usable in hashmaps
@@ -120,8 +116,94 @@ class ORCA
         return (x.a << 16) ^ (x.b << 8) ^ (x.c << 0);
       }
     };
-
   }; // end class key_triple
+
+  ///
+  /// @brief Exchangeable implementations of an adjacent matrix (policy-based design)
+  ///
+  namespace adjacent_implementation
+  {
+    ///
+    /// @brief adj is a vector of vector
+    ///
+    class default
+    {
+      // adj[x] - adjacency list of node x
+      std::vector<std::vector<int>> _adj;
+      // Reference on edges
+      const std::vector<int>& _deg;
+      ///
+      /// @brief Checks if an element equivalent to value appears within the range x, y
+      ///
+      bool operator()(int x, int y) const
+      {
+        auto first = this->_adj.at(x).cbegin();
+        auto last = std::advance(this->_adj.cbegin(), this->_deg.at(x));
+        return std::binary_search(first, last, y);
+      }
+      ///
+      /// @brief Build implementation
+      ///
+      auto build_implementation(int n, int m)
+      {
+        this->_adj.reserve(n);
+        for (int i = 0; i < n; i++)
+        {
+          _adj[i].reserve(_deg.at(i));
+        }
+      }
+      ///
+      /// @brief Policy constructor
+      ///
+      default(int n, int m, const std::vector<key_pair> &edges, const std::vector<int> & deg):
+      _deg(deg),
+      _adj(build_implementation(n, m)){}
+    };
+    ///
+    /// @brief adj is one long vector
+    ///
+    class compressed
+    {
+      int _n;
+      // compressed adjacency matrix
+      std::vector<int> _adj;
+      // chunk size
+      static constexpr int chunk = 8 * sizeof(int);
+
+      ///
+      /// @brief Checks if an element equivalent to value appears within the range x, y
+      ///
+      /// @note Strategy is set up adjacency matrix if it's smaller than 100MB
+      ///
+      bool operator()(int x, int y) const
+      {
+        return this->_adj[(x * this->_n + y) / chunk] & (1 << ((x * this->_n + y) % chunk));
+      }
+      ///
+      /// @ brief Build the adjacent matrix
+      ///
+      auto build_implementation(int n, int m, const std::vector<key_pair> &edges) const
+      {
+        int size = (n*n) / chunk + 1;
+        // Initialize vector
+        std::vector<int> matrix.reserve(size);
+        // Fill data
+        for (int i = 0; i < m; i++)
+        {
+          int a = edges[i].a;
+          int b = edges[i].b;
+          _adj[(a * n + b) / chunk] |= (1 << ((a * n + b) % chunk));
+          _adj[(b * n + a) / chunk] |= (1 << ((b * n + a) % chunk));
+        }
+      }
+      ///
+      /// @brief Policy constructor
+      ///
+      compressed(int n, int m, const std::vector<key_pair> &edges, const std::vector<int> & deg):
+      _n(n),
+      _adj_matrix(build_implementation(n, m, edges)){}
+    };
+  }
 
   // Type aliases for readibility
   using common2_type = std::unordered_map<key_pair, int, key_pair::hash>;
@@ -140,14 +222,13 @@ class ORCA
   std::vector<int> deg;
   // list of edge
   std::vector<key_pair> edges;
-  // adj[x] - adjacency list of node x
-  std::vector<std::vector<int>> adj;
   // inc[x] - incidence list of node x: (y, edge id)
   std::vector<std::vector<std::pair<int,int>>> inc;
-  // compressed adjacency matrix
-  std::vector<int> adj_matrix;
   // orbit[x][o] - how many times does node x participate in orbit o
   std::vector<std::vector<int>> orbit;
+
+  /// Store a different runtime strategy: can be adjacent_list (default) or adjacent_matrix
+  std::function< bool( int, int ) > adjacent;
 
   ///
   /// @brief Return the value stored at the key, else 0
@@ -177,36 +258,59 @@ class ORCA
     return find_or_zero(x, this->common3);
   }
 
-  // Adjacence strategy
-
-  static constexpr int adj_chunk = 8 * sizeof(int);
-
-  /// Store a different runtime strategy: can be adjacent_list (default) or adjacent_matrix
-  std::function< bool( int, int ) > adjacent;
-
-  ///
-  /// @brief Checks if an element equivalent to value appears within the range x, y
-  ///
-  /// @note Default strategy
-  ///
-  bool adjacent_list(int x, int y) const
+  auto chose_strategy(int n, int m, const& std::vector<key_pair> edges)
   {
-    auto first = this->adj.at(x).cbegin();
-    auto last = std::advance(this->adj.cbegin(), this->deg.at(x));
-    return std::binary_search(first, last, y);
+    // set up adjacency matrix if it's smaller than 100MB
+    if ((int64)n * n < 100LL * 1024 * 1024 * 8)
+    {
+      // Chose strategy
+      this->adjacent = this->adjacent_matrix;
+
+    } else {
+      this->adjacent = this->adjacent_list;
+    }
+  }
+  ///
+  /// @brief Constructor
+  ///
+  ORCA(int n, int m, const std::vector<key_pair> &edges, const std::vector<int> &deg):
+  adjacent(chose_strategy(n)),
+
+  {
+
+
+
+    inc = (PII **)malloc(n * sizeof(PII *));
+    for (int i = 0; i < n; i++) {
+      inc[i] = (PII *)malloc(deg[i] * sizeof(PII));
+    }
+
+    int *d = (int *)calloc(n, sizeof(int));
+    for (int i = 0; i < m; i++) {
+      int a = edges[i].a, b = edges[i].b;
+      adj[a][d[a]] = b;
+      adj[b][d[b]] = a;
+      inc[a][d[a]] = PII(b, i);
+      inc[b][d[b]] = PII(a, i);
+      d[a]++;
+      d[b]++;
+    }
+
+    for (int i = 0; i < n; i++) {
+      sort(adj[i], adj[i] + deg[i]);
+      sort(inc[i], inc[i] + deg[i]);
+    }
+
+    // initialize orbit counts
+    orbit = (int64 **)malloc(n * sizeof(int64 *));
+    for (int i = 0; i < n; i++) {
+      orbit[i] = (int64 *)calloc(73, sizeof(int64));
+    }
   }
 
   ///
-  /// @brief Checks if an element equivalent to value appears within the range x, y
+  /// @brief Count graphlets on max 5 nodes
   ///
-  /// @note Strategy is set up adjacency matrix if it's smaller than 100MB
-  ///
-  bool adjacent_matrix(int x, int y) const
-  {
-    return this->adj_matrix[(x * this->n + y) / this->adj_chunk] & (1 << ((x *this->n + y) % this->adj_chunk));
-  }
-
-  /** count graphlets on max 5 nodes */
   void count_orbits()
   {
     using PAIR = key_pair;
@@ -657,7 +761,6 @@ class ORCA
 
   }
 
-  std::fstream fin, fout;  // input and output files
 
   int init(string afin, string afout) {
     // open input, output files
@@ -707,19 +810,6 @@ class ORCA
     if ((int)(set<PAIR>(edges, edges + m).size()) != m) {
       cerr << "Input file contains duplicate undirected edges." << endl;
       return 0;
-    }
-
-    // set up adjacency matrix if it's smaller than 100MB
-    if ((int64)n * n < 100LL * 1024 * 1024 * 8) {
-      adjacent = adjacent_matrix;
-      adj_matrix = (int *)calloc((n * n) / adj_chunk + 1, sizeof(int));
-      for (int i = 0; i < m; i++) {
-        int a = edges[i].a, b = edges[i].b;
-        adj_matrix[(a * n + b) / adj_chunk] |= (1 << ((a * n + b) % adj_chunk));
-        adj_matrix[(b * n + a) / adj_chunk] |= (1 << ((b * n + a) % adj_chunk));
-      }
-    } else {
-      adjacent = adjacent_list;
     }
 
     // set up adjacency, incidence lists
@@ -815,7 +905,7 @@ void check_validity(int a, int b, int n)
 ///
 /// @brief Check for duplicated undirected edges.
 ///
-auto check_duplicated_undirected_edges(int m, const std::vector<key_pair> &edges)
+void check_duplicated_undirected_edges(int m, const std::vector<key_pair> &edges)
 {
   auto first = edges.cbegin();
   auto last = std::advance(edges.cbegin(), m);
@@ -870,52 +960,8 @@ ORCA orca_from_file(const std::string &input_file)
 
   check_duplicated_undirected_edges(m, edges);
 
-  // set up adjacency matrix if it's smaller than 100MB
-  if ((int64)n * n < 100LL * 1024 * 1024 * 8)
-  {
-    adjacent = adjacent_matrix;
-    adj_matrix = (int *)calloc((n * n) / adj_chunk + 1, sizeof(int));
-    for (int i = 0; i < m; i++) {
-      int a = edges[i].a, b = edges[i].b;
-      adj_matrix[(a * n + b) / adj_chunk] |= (1 << ((a * n + b) % adj_chunk));
-      adj_matrix[(b * n + a) / adj_chunk] |= (1 << ((b * n + a) % adj_chunk));
-    }
-  } else {
-    adjacent = adjacent_list;
-  }
-
-  // set up adjacency, incidence lists
-  adj = (int **)malloc(n * sizeof(int *));
-  for (int i = 0; i < n; i++) {
-    adj[i] = (int *)malloc(deg[i] * sizeof(int));
-  }
-
-  inc = (PII **)malloc(n * sizeof(PII *));
-  for (int i = 0; i < n; i++) {
-    inc[i] = (PII *)malloc(deg[i] * sizeof(PII));
-  }
-
-  int *d = (int *)calloc(n, sizeof(int));
-  for (int i = 0; i < m; i++) {
-    int a = edges[i].a, b = edges[i].b;
-    adj[a][d[a]] = b;
-    adj[b][d[b]] = a;
-    inc[a][d[a]] = PII(b, i);
-    inc[b][d[b]] = PII(a, i);
-    d[a]++;
-    d[b]++;
-  }
-
-  for (int i = 0; i < n; i++) {
-    sort(adj[i], adj[i] + deg[i]);
-    sort(inc[i], inc[i] + deg[i]);
-  }
-
-  // initialize orbit counts
-  orbit = (int64 **)malloc(n * sizeof(int64 *));
-  for (int i = 0; i < n; i++) {
-    orbit[i] = (int64 *)calloc(73, sizeof(int64));
-  }
+  // Call to the constructor
+  return ORCA(n, m, edes, deg);
 }
 
 ///
