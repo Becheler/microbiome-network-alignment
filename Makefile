@@ -9,13 +9,13 @@ all: $(OBJS)
 	$(CC) -g $(OBJS) -o $(OUT)
 
 mna.o: mna.cpp
-	$(CC) $(FLAGS) mna.cpp -std=c++11
+	$(CC) $(FLAGS) mna.cpp -std=c++20
 
 top_sim.o: top_sim.cpp
-	$(CC) $(FLAGS) top_sim.cpp -std=c++11
+	$(CC) $(FLAGS) top_sim.cpp -std=c++20
 
 orca.o: orca.cpp
-	$(CC) $(FLAGS) orca.cpp -std=c++11
+	$(CC) $(FLAGS) orca.cpp -std=c++20
 
 clean:
 	rm -f $(OBJS) $(OUT) *.out

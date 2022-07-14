@@ -10,7 +10,7 @@
 #include <time.h>
 #include <fstream>
 #include <iostream>
-#include <array> 
+#include <array>
 #include <vector>
 
 #include "orca.h"
@@ -18,13 +18,13 @@
 namespace top {
 
     const double O[73] = {
-    1, 2, 2, 2, 3, 4, 3, 3, 4, 3, 
-    4, 4, 4, 4, 3, 4, 6, 5, 4, 5, 
-    6, 6, 4, 4, 4, 5, 7, 4, 6, 6, 
-    7, 4, 6, 6, 6, 5, 6, 7, 7, 5, 
-    7, 6, 7, 6, 5, 5, 6, 8, 7, 6, 
-    6, 8, 6, 9, 5, 6, 4, 6, 6, 7, 
-    8, 6, 6, 8, 7, 6, 7, 7, 8, 5, 
+    1, 2, 2, 2, 3, 4, 3, 3, 4, 3,
+    4, 4, 4, 4, 3, 4, 6, 5, 4, 5,
+    6, 6, 4, 4, 4, 5, 7, 4, 6, 6,
+    7, 4, 6, 6, 6, 5, 6, 7, 7, 5,
+    7, 6, 7, 6, 5, 5, 6, 8, 7, 6,
+    6, 8, 6, 9, 5, 6, 4, 6, 6, 7,
+    8, 6, 6, 8, 7, 6, 7, 7, 8, 5,
     6, 6, 4};
     const double alpha = 0.5;
 
@@ -138,8 +138,8 @@ namespace top {
     */
     void init(std::string gfin, std::string hfin) {
         // Calculate the graphlet degree vectors for each node of each graph
-        G_gdvs_f = orca(gfin);
-        H_gdvs_f = orca(hfin);
+        G_gdvs_f = read_count_write_orca(gfin);
+        H_gdvs_f = read_count_write_orca(hfin);
 
         // Get the GDVs for each node in G and H
         G_gdvs = parse(G_gdvs_f);

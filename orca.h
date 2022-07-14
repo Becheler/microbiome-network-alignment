@@ -8,7 +8,9 @@
 #include <iostream> // std::cout
 #include <exception> // std::invalid_argument
 #include <functional> // std::function
-
+#include <iterator> // std::advance
+#include <cassert>
+#include <set>
 ///
 /// @brief Nested class for a hashable key for pairs of nodes
 ///
@@ -17,10 +19,10 @@ class key_pair
 private:
   // type alias
   using self_type = key_pair;
+public:
   // data memebers
   int a;
   int b;
-public:
   ///
   /// @brief Constructor using initialization list
   ///
@@ -62,19 +64,19 @@ class key_triple
 private:
   // type alias
   using self_type = key_triple;
+public:
   // data members
   int a;
   int b;
   int c;
-public:
   ///
   /// @brief Constructor using initialization list
   ///
   key_triple(int a0, int b0, int c0): a(a0), b(b0), c(c0)
   {
-    if (a > b) swap(a, b);
-    if (b > c) swap(b, c);
-    if (a > b) swap(a, b);
+    if (a > b) std::swap(a, b);
+    if (b > c) std::swap(b, c);
+    if (a > b) std::swap(a, b);
   }
   ///
   /// @brief Comparison operator
@@ -120,36 +122,41 @@ namespace adjacent_policy
   ///
   class default_impl
   {
-    // adj[x] - adjacency list of node x
-    std::vector<std::vector<int>> _adj;
+  protected:
     // Reference on edges
     const std::vector<int>& _deg;
-    ///
-    /// @brief Checks if an element equivalent to value appears within the range x, y
-    ///
-    bool operator()(int x, int y) const
-    {
-      auto first = this->_adj.at(x).cbegin();
-      auto last = std::advance(this->_adj.cbegin(), this->_deg.at(x));
-      return std::binary_search(first, last, y);
-    }
-    ///
-    /// @brief Build implementation
-    ///
-    auto build_implementation(int n, int m)
-    {
-      this->_adj.reserve(n);
-      for (int i = 0; i < n; i++)
-      {
-        _adj[i].reserve(_deg.at(i));
-      }
-    }
+    // adj[x] - adjacency list of node x
+    std::vector<std::vector<int>> _adj;
+  public:
     ///
     /// @brief Policy constructor
     ///
-    default_impl(int n, int m, const std::vector<key_pair> &edges, const std::vector<int> & deg):
+    default_impl(int n, int, const std::vector<key_pair>, const std::vector<int> & deg):
     _deg(deg),
-    _adj(build_implementation(n, m)){}
+    _adj(build_implementation(n, deg)){}
+    ///
+    /// @brief Checks if an element equivalent to value appears within the range x, y
+    ///
+    bool adjacent(int x, int y) const
+    {
+      auto first = this->_adj.at(x).cbegin();
+      auto last = first;
+      std::advance(last, this->_deg.at(x));
+      return std::binary_search(first, last, y);
+    }
+  private:
+    ///
+    /// @brief Build implementation
+    ///
+    std::vector<std::vector<int>> build_implementation(int n, const std::vector<int> & deg)
+    {
+      std::vector<std::vector<int>> adj(n);
+      for (std::size_t i = 0; auto& it : adj)
+      {
+        it.reserve(deg.at(i));
+      }
+      return adj;
+    }
   };
 
   ///
@@ -157,51 +164,55 @@ namespace adjacent_policy
   ///
   class compressed
   {
+  private:
+    // number of nodes
     int _n;
-    // compressed adjacency matrix
-    std::vector<int> _adj;
     // chunk size
     static constexpr int chunk = 8 * sizeof(int);
-
-    ///
-    /// @brief Checks if an element equivalent to value appears within the range x, y
-    ///
-    /// @note Strategy is set up adjacency matrix if it's smaller than 100MB
-    ///
-    bool operator()(int x, int y) const
-    {
-      return this->_adj[(x * this->_n + y) / chunk] & (1 << ((x * this->_n + y) % chunk));
-    }
     ///
     /// @ brief Build the adjacent matrix
     ///
-    auto build_implementation(int n, int m, const std::vector<key_pair> &edges) const
+    std::vector<int> build_implementation(int n, int m, const std::vector<key_pair> &edges) const
     {
       int size = (n*n) / chunk + 1;
       // Initialize vector
-      std::vector<int> matrix.reserve(size);
+      std::vector<int> adj(size);
       // Fill data
       for (int i = 0; i < m; i++)
       {
         int a = edges[i].a;
         int b = edges[i].b;
-        _adj[(a * n + b) / chunk] |= (1 << ((a * n + b) % chunk));
-        _adj[(b * n + a) / chunk] |= (1 << ((b * n + a) % chunk));
+        adj[(a * n + b) / chunk] |= (1 << ((a * n + b) % chunk));
+        adj[(b * n + a) / chunk] |= (1 << ((b * n + a) % chunk));
       }
+      return adj;
+    }
+  protected:
+    // compressed adjacency matrix
+    std::vector<int> _adj;
+  public:
+    ///
+    /// @brief Checks if an element equivalent to value appears within the range x, y
+    ///
+    /// @note Strategy is set up adjacency matrix if it's smaller than 100MB
+    ///
+    bool adjacent(int x, int y) const
+    {
+      return this->_adj[(x * this->_n + y) / chunk] & (1 << ((x * this->_n + y) % chunk));
     }
     ///
     /// @brief Policy constructor
     ///
-    compressed(int n, int m, const std::vector<key_pair> &edges, const std::vector<int> & deg):
+    compressed(int n, int m, const std::vector<key_pair> &edges, const std::vector<int> &):
     _n(n),
-    _adj_matrix(build_implementation(n, m, edges)){}
-
+    _adj(build_implementation(n, m, edges)){}
     ///
     /// @brief Should the user pick this implementation?
     static inline constexpr bool should_use(int n)
     {
-      return static_cast<int64>(n * n) < 100LL * 1024 * 1024 * 8);
+      return static_cast<long long>(n * n) < 100LL * 1024 * 1024 * 8;
     }
+
   };
 } // end namespace adjacent_implementation
 
@@ -218,21 +229,21 @@ class ORCA : protected Strategy
   using common3_type = std::unordered_map<key_triple, int, key_triple::hash>;
 
   // ORCA alorithm state (member data)
-  common2_type common2;
+  common2_type _common2;
   // stores the number of nodes that are adjacent to some triplets of nodes
-  common3_type common3;
+  common3_type _common3;
   // number of nodes
-  int n;
+  int _n;
   // number of edges
-  int m;
+  int _m;
   // degrees of individual nodes
-  std::vector<int> deg;
+  std::vector<int> _deg;
   // list of edge
-  std::vector<key_pair> edges;
+  std::vector<key_pair> _edges;
   // inc[x] - incidence list of node x: (y, edge id)
-  std::vector<std::vector<std::pair<int,int>>> inc;
+  std::vector<std::vector<std::pair<int,int>>> _inc;
   // orbit[x][o] - how many times does node x participate in orbit o
-  std::vector<std::vector<int>> orbit;
+  std::vector<std::vector<int>> _orbits;
   ///
   /// @brief Return the value stored at the key, else 0
   ///
@@ -250,7 +261,7 @@ class ORCA : protected Strategy
   ///
   int common2_get(const key_pair & x) const
   {
-    return find_or_zero(x, this->common2);
+    return find_or_zero(x, this->_common2);
   }
 
   ///
@@ -258,53 +269,85 @@ class ORCA : protected Strategy
   ///
   int common3_get(const key_triple & x) const
   {
-    return find_or_zero(x, this->common3);
+    return find_or_zero(x, this->_common3);
   }
 
-  auto chose_strategy(int n, int m, const& std::vector<key_pair> edges)
+  ///
+  /// @brief Initialize an incidence matrix
+  ///
+  auto reserve_incidence_matrix(int n, int m, const std::vector<int> &deg) const
   {
-    // set up adjacency matrix if it's smaller than 100MB
-    if ((int64)n * n < 100LL * 1024 * 1024 * 8)
+    std::vector< std::vector< std::pair<int,int> >> inc(n);
+    for(std::size_t i = 0; auto &it : inc)
     {
-      // Chose strategy
-      this->adjacent = this->adjacent_matrix;
+      it.reserve(deg[i]);
+    }
 
-    } else {
-      this->adjacent = this->adjacent_list;
+    return inc;
+  }
+
+  ///
+  /// @brief Initialize a the orbit atrix
+  ///
+  auto reserve_orbits(int n) const
+  {
+    std::vector<std::vector<long long>> orbits(n);
+    for (auto & it : orbits)
+    {
+      it.reserve(73);
     }
   }
-  ///
-  /// @brief Constructor
-  ///
-  ORCA(int n, int m, const std::vector<key_pair> &edges, const std::vector<int> &deg):
-  adjacent(chose_strategy(n)),
-  {
-    inc = (PII **)malloc(n * sizeof(PII *));
-    for (int i = 0; i < n; i++) {
-      inc[i] = (PII *)malloc(deg[i] * sizeof(PII));
-    }
 
-    int *d = (int *)calloc(n, sizeof(int));
-    for (int i = 0; i < m; i++) {
-      int a = edges[i].a, b = edges[i].b;
-      adj[a][d[a]] = b;
-      adj[b][d[b]] = a;
-      inc[a][d[a]] = PII(b, i);
-      inc[b][d[b]] = PII(a, i);
+  ///
+  /// @brief Sort elements in a specific range [first, last]
+  ///
+  ///
+  template<typename Container>
+  void sort_in_range(Container& container, int i, int j)
+  {
+    assert(i > j);
+    auto first = this->container.begin() + i;
+    auto last = this->container.begin() + i + j;
+    std::sort(first, last);
+  }
+  /// @brief Move constructor
+  ///
+  /// @note Move semantics: edges and deg content are "stolen" from the previous context
+  ///
+  ORCA(int n, int m, std::vector<key_pair> &&edges, std::vector<int> &&deg) noexcept :
+  _n(n),
+  _m(m),
+  _deg(std::move(deg)),
+  _edges(std::move(edges)),
+  Strategy(n, m, this->edges, this->deg),
+  _inc(reserve_incidence_matrix(n)),
+  _orbits(reserve_orbits(n))
+  {
+
+    std::vector<int> d(n);
+
+    for (std::size_t i = 0; auto const & it : edges)
+    {
+      int a = it.a;
+      int b = it.b;
+
+      // accessing policy protected data, not great but okay-ish
+      this->_adj[a][d[a]] = b;
+      this->_adj[b][d[b]] = a;
+
+      this->_inc[a][d[a]] = std::pair<int,int>(b, i);
+      this->_inc[b][d[b]] = std::pair<int,int>(a, i);
+
       d[a]++;
       d[b]++;
     }
 
-    for (int i = 0; i < n; i++) {
-      sort(adj[i], adj[i] + deg[i]);
-      sort(inc[i], inc[i] + deg[i]);
+    for (int i = 0; i < n; i++)
+    {
+      sort_in_range(this->_adj, i, i + deg[i]);
+      sort_in_range(this->_inc, i, i + deg[i]);
     }
 
-    // initialize orbit counts
-    orbit = (int64 **)malloc(n * sizeof(int64 *));
-    for (int i = 0; i < n; i++) {
-      orbit[i] = (int64 *)calloc(73, sizeof(int64));
-    }
   }
 
   ///
@@ -312,8 +355,27 @@ class ORCA : protected Strategy
   ///
   void count_orbits()
   {
+    //// Interface modern C++ / old C algorithm
+
+    // Type aliases
     using PAIR = key_pair;
     using TRIPLE = key_triple;
+    // cheap to copy
+    int n = this->_n;
+    int m = this->_m;
+    // Read-only heavy graph properties
+    auto const& deg = this->_deg;
+    auto const& edges = this->_edges;
+    auto const& adj = this->_adj;
+    auto const& inc = this->_inc;
+    // read and write data accumulated by the algorithm
+    auto& common2 = this->_common2;
+    auto& common3 = this->_common3;
+    auto& orbit = this->_orbits;
+    // alias on policy operator (lambda function)
+    auto adjacent = [this](int x, int y){ return this->adjacent(x, y);};
+
+    //// Old algorithm
 
     clock_t startTime, endTime;
     startTime = clock();
@@ -375,16 +437,12 @@ class ORCA : protected Strategy
     // count full graphlets
     printf("stage 2 - counting full graphlets\n");
 
-    std::vector<int64> C5(n);
+    std::vector<long long> C5(n);
     std::vector<int> neigh(n);
     std::vector<int> neigh2(n);
 
     int nn;
     int nn2;
-
-    // int64 *C5 = (int64 *)calloc(n, sizeof(int64));
-    // int *neigh = (int *)malloc(n * sizeof(int)), nn;
-    // int *neigh2 = (int *)malloc(n * sizeof(int)), nn2;
 
     frac_prev = -1;
 
@@ -477,17 +535,17 @@ class ORCA : protected Strategy
         }
       }
 
-      int64 f_71 = 0, f_70 = 0, f_67 = 0, f_66 = 0, f_58 = 0, f_57 = 0;                                // 14
-      int64 f_69 = 0, f_68 = 0, f_64 = 0, f_61 = 0, f_60 = 0, f_55 = 0, f_48 = 0, f_42 = 0, f_41 = 0;  // 13
-      int64 f_65 = 0, f_63 = 0, f_59 = 0, f_54 = 0, f_47 = 0, f_46 = 0, f_40 = 0;                      // 12
-      int64 f_62 = 0, f_53 = 0, f_51 = 0, f_50 = 0, f_49 = 0, f_38 = 0, f_37 = 0, f_36 = 0;            // 8
-      int64 f_44 = 0, f_33 = 0, f_30 = 0, f_26 = 0;                                                    // 11
-      int64 f_52 = 0, f_43 = 0, f_32 = 0, f_29 = 0, f_25 = 0;                                          // 10
-      int64 f_56 = 0, f_45 = 0, f_39 = 0, f_31 = 0, f_28 = 0, f_24 = 0;                                // 9
-      int64 f_35 = 0, f_34 = 0, f_27 = 0, f_18 = 0, f_16 = 0, f_15 = 0;                                // 4
-      int64 f_17 = 0;                                                                                  // 5
-      int64 f_22 = 0, f_20 = 0, f_19 = 0;                                                              // 6
-      int64 f_23 = 0, f_21 = 0;                                                                        // 7
+      long long f_71 = 0, f_70 = 0, f_67 = 0, f_66 = 0, f_58 = 0, f_57 = 0;                                // 14
+      long long f_69 = 0, f_68 = 0, f_64 = 0, f_61 = 0, f_60 = 0, f_55 = 0, f_48 = 0, f_42 = 0, f_41 = 0;  // 13
+      long long f_65 = 0, f_63 = 0, f_59 = 0, f_54 = 0, f_47 = 0, f_46 = 0, f_40 = 0;                      // 12
+      long long f_62 = 0, f_53 = 0, f_51 = 0, f_50 = 0, f_49 = 0, f_38 = 0, f_37 = 0, f_36 = 0;            // 8
+      long long f_44 = 0, f_33 = 0, f_30 = 0, f_26 = 0;                                                    // 11
+      long long f_52 = 0, f_43 = 0, f_32 = 0, f_29 = 0, f_25 = 0;                                          // 10
+      long long f_56 = 0, f_45 = 0, f_39 = 0, f_31 = 0, f_28 = 0, f_24 = 0;                                // 9
+      long long f_35 = 0, f_34 = 0, f_27 = 0, f_18 = 0, f_16 = 0, f_15 = 0;                                // 4
+      long long f_17 = 0;                                                                                  // 5
+      long long f_22 = 0, f_20 = 0, f_19 = 0;                                                              // 6
+      long long f_23 = 0, f_21 = 0;                                                                        // 7
 
       for (int nx1 = 0; nx1 < deg[x]; nx1++) {
         int a = inc[x][nx1].first, xa = inc[x][nx1].second;
@@ -766,7 +824,7 @@ class ORCA : protected Strategy
   std::string format() const
   {
     std::string buffer;
-    for (int i = 0; i < n; i++)
+    for (int i = 0; i < this->_n; i++)
     {
       for (int j = 0; j < 73; j++)
       {
@@ -774,12 +832,12 @@ class ORCA : protected Strategy
         {
           buffer += " ";
         }
-        auto orbit_value = orbit[i][j];
+        auto orbit_value = this->_orbits[i][j];
         assert(orbit_value >= 0);
         buffer += std::to_string(orbit_value);
       }
     }
-    return buffer
+    return buffer;
   }
 
   ///
@@ -801,11 +859,11 @@ class ORCA : protected Strategy
 ///
 class OrcaParser
 {
-  int n;
-  int m;
-  int dmax;
-  std::vector<key_pair> edges;
-  std::vector<int> deg;
+  int _n;
+  int _m;
+  int _dmax;
+  std::vector<key_pair> _edges;
+  std::vector<int> _deg;
 
   ///
   /// @brief Check read values validity
@@ -829,7 +887,8 @@ class OrcaParser
   void check_duplicated_undirected_edges(int m, const std::vector<key_pair> &edges)
   {
     auto first = edges.cbegin();
-    auto last = std::advance(edges.cbegin(), m);
+    auto last = first;
+    std::advance(last, m);
     if ( std::set<key_pair>(first, last).size() != m)
     {
       throw std::invalid_argument("Input file contains duplicate undirected edges.");
@@ -841,7 +900,7 @@ class OrcaParser
   ///
   std::istream& read_graph_properties_from(std::ifstream& stream)
   {
-    stream >> this->n >> this->m;
+    stream >> this->_n >> this->_m;
     return stream;
   }
 
@@ -852,12 +911,14 @@ class OrcaParser
   {
     int a;
     int b;
+    int i = 0;
     while(stream >> a >> b)
     {
-      check_validity(a, b, this->n);
-      this->deg[a]++;
-      this->deg[b]++;
-      this->edges[i] = key_pair(a, b);
+      check_validity(a, b, this->_n);
+      this->_deg[a]++;
+      this->_deg[b]++;
+      this->_edges.at(i) = key_pair(a, b);
+      i=i+1;
     }
     return stream;
   }
@@ -867,10 +928,11 @@ class OrcaParser
   ///
   void compute_maximum_degree()
   {
-    this-> d_max = *std::max_element(this->deg.begin(), this->deg.end());
+    this-> _dmax = *std::max_element(this->_deg.begin(), this->_deg.end());
   }
 
 public:
+  auto nb_nodes(){return this->_n;}
 
   void parse(const std::string &input_file)
   {
@@ -879,16 +941,16 @@ public:
     {
       read_graph_properties_from(myfile);
 
-      edges.reserve(this->m);
-      deg.reserve(this->n);
+      this->_edges.reserve(this->_m);
+      this->_deg.reserve(this->_n);
 
       populate_data_from(myfile);
       compute_maximum_degree();
-      check_duplicated_undirected_edges(this->m, this->edges);
+      check_duplicated_undirected_edges(this->_m, this->_edges);
 
-      std::cout << "Number of nodes:" << this->n << std::endl;
-      std::cout << "Number of edges:" << this->m << std::endl;
-      std::cout << "Max degree:" << this->d_max << std::endl
+      std::cout << "Number of nodes:" << this->_n << std::endl;
+      std::cout << "Number of edges:" << this->_m << std::endl;
+      std::cout << "Max degree:" << this->_dmax << std::endl;
 
       myfile.close();
 
@@ -896,13 +958,20 @@ public:
       std::cout << "Unable to open file";
     }
   }
-} // end OrcaParser
+  ///
+  /// @brief Stream operator can access to private data - not perfect but okay-ish
+  ///
+  friend std::ostream& operator <<(std::ostream& stream, OrcaParser const& p);
+}; // end OrcaParser
 
+///
+/// @brief Stream operator
+///
 std::ostream& operator <<(std::ostream& stream, OrcaParser const& p)
 {
-  stream << "Number of nodes: " << this->n;
-  stream << "Number of edges: " << this->m;
-  stream << "Maximum degree: " << this->d_max;
+  stream << "Number of nodes: " << p._n;
+  stream << "Number of edges: " << p._m;
+  stream << "Maximum degree: " << p._dmax;
   return stream;
 }
 
@@ -912,9 +981,9 @@ std::ostream& operator <<(std::ostream& stream, OrcaParser const& p)
 /// @note If the input file is "path/to/input.in", the output file should be "path/to/input.out"
 ///
 /// @warning does not work if the filename begins with "."
-std::string generate_output_filename(const std::string &input_file)
+std::string generate_output_filename_from(const std::string &input_file)
 {
-  rawname = input_file.substr(0, input_file.find_last_of("."));
+  auto rawname = input_file.substr(0, input_file.find_last_of("."));
   return rawname += "_gdvs.out";
 }
 
@@ -922,14 +991,12 @@ std::string generate_output_filename(const std::string &input_file)
 /// @brief Calculate the Graphlet Degree Vector (GDV) for the given graph with the given implementation policy
 ///
 template<typename Policy=adjacent_policy::default_impl>
-std::string graphlet_degree_vector_analysis(OrcaParser &parser)
+std::string graphlet_degree_vector_analysis(OrcaParser &parser, const std::string& output_file)
 {
   auto computer = ORCA<Policy>();
 
   std::cout << "Counting orbits of graphlets on 5 nodes." << std::endl;
   computer.count_orbits();
-
-  auto output_file = generate_output_filename(input_file);
 
   std::cout << "Writing results in " << output_file << std::endl;
   computer.write_results_to(output_file);
@@ -937,20 +1004,33 @@ std::string graphlet_degree_vector_analysis(OrcaParser &parser)
   return output_file;
 }
 
-std::string orca_from_file()
+///
+/// @brief Read data from file, counts orbits, write in output_file
+///
+std::string read_count_write_orca(const std::string& input_file, const std::string& output_file)
 {
   std::cout << "Initialize ORCA from file " << input_file << std::endl;
 
   OrcaParser parser;
   parser.parse(input_file);
   std::cout << parser << std::endl;
-
-  if( adjacent_policy::compressed::should_use(n))
-  {
-    graphlet_degree_vector_analysis<adjacent_policy::compressed>(parser);
+  if( adjacent_policy::compressed::should_use(parser.nb_nodes())){
+    graphlet_degree_vector_analysis<adjacent_policy::compressed>(parser, output_file);
   }else{
-    graphlet_degree_vector_analysis<>(parser);
+    graphlet_degree_vector_analysis<>(parser, output_file);
   }
+  return output_file;
 }
 
+///
+/// @brief Read data from file, counts orbits, write in output_file
+///
+/// @note output_file defaults to input_file raw name (without extension) + gdvs.out
+///
+std::string read_count_write_orca(const std::string& input_file)
+{
+  auto output_file = generate_output_filename_from(input_file);
+  read_count_write_orca(input_file, output_file);
+  return output_file;
+}
 #endif
