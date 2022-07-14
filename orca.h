@@ -10,201 +10,209 @@
 #include <functional> // std::function
 
 ///
+/// @brief Nested class for a hashable key for pairs of nodes
+///
+class key_pair
+{
+private:
+  // type alias
+  using self_type = key_pair;
+  // data memebers
+  int a;
+  int b;
+public:
+  ///
+  /// @brief Constructor using initialization list
+  ///
+  key_pair(int a0, int b0): a( std::min(a0,b0) ), b( std::max(a0,b0) ){}
+  ///
+  /// @brief Comparison operator
+  ///
+  bool operator<(const self_type &other) const
+  {
+    if (this->a == other.a)
+    return this->b < other.b;
+    else
+    return this->a < other.a;
+  }
+  ///
+  /// @brief Equality Comparable
+  ///
+  bool operator==(const self_type &other) const
+  {
+    return this->a == other.a && this->b == other.b;
+  }
+  ///
+  /// @brief Hashable and usable in hashmaps
+  ///
+  struct hash
+  {
+    size_t operator()(const key_pair &x) const
+    {
+      return (x.a << 8) ^ (x.b << 0);
+    }
+  };
+}; // end class key_pair
+
+///
+/// @brief Nested class for a hashable key for triplet of nodes
+///
+class key_triple
+{
+private:
+  // type alias
+  using self_type = key_triple;
+  // data members
+  int a;
+  int b;
+  int c;
+public:
+  ///
+  /// @brief Constructor using initialization list
+  ///
+  key_triple(int a0, int b0, int c0): a(a0), b(b0), c(c0)
+  {
+    if (a > b) swap(a, b);
+    if (b > c) swap(b, c);
+    if (a > b) swap(a, b);
+  }
+  ///
+  /// @brief Comparison operator
+  ///
+  bool operator<(const self_type &other) const
+  {
+    if (this->a == other.a)
+    {
+      if (this->b == other.b)
+      return this->c < other.c;
+      else
+      return this->b < other.b;
+    } else {
+      return this->a < other.a;
+    }
+  }
+  ///
+  /// @brief EqualityComparable
+  ///
+  bool operator==(const self_type &other) const
+  {
+    return this->a == other.a && this->b == other.b && this->c == other.c;
+  }
+  ///
+  /// @brief Hashable and usable in hashmaps
+  ///
+  struct hash
+  {
+    size_t operator()(const key_triple &x) const
+    {
+      return (x.a << 16) ^ (x.b << 8) ^ (x.c << 0);
+    }
+  };
+}; // end class key_triple
+
+///
+/// @brief Exchangeable implementations of an adjacent matrix (policy-based design)
+///
+namespace adjacent_policy
+{
+  ///
+  /// @brief adj is a vector of vector
+  ///
+  class default_impl
+  {
+    // adj[x] - adjacency list of node x
+    std::vector<std::vector<int>> _adj;
+    // Reference on edges
+    const std::vector<int>& _deg;
+    ///
+    /// @brief Checks if an element equivalent to value appears within the range x, y
+    ///
+    bool operator()(int x, int y) const
+    {
+      auto first = this->_adj.at(x).cbegin();
+      auto last = std::advance(this->_adj.cbegin(), this->_deg.at(x));
+      return std::binary_search(first, last, y);
+    }
+    ///
+    /// @brief Build implementation
+    ///
+    auto build_implementation(int n, int m)
+    {
+      this->_adj.reserve(n);
+      for (int i = 0; i < n; i++)
+      {
+        _adj[i].reserve(_deg.at(i));
+      }
+    }
+    ///
+    /// @brief Policy constructor
+    ///
+    default_impl(int n, int m, const std::vector<key_pair> &edges, const std::vector<int> & deg):
+    _deg(deg),
+    _adj(build_implementation(n, m)){}
+  };
+
+  ///
+  /// @brief adj is one long vector
+  ///
+  class compressed
+  {
+    int _n;
+    // compressed adjacency matrix
+    std::vector<int> _adj;
+    // chunk size
+    static constexpr int chunk = 8 * sizeof(int);
+
+    ///
+    /// @brief Checks if an element equivalent to value appears within the range x, y
+    ///
+    /// @note Strategy is set up adjacency matrix if it's smaller than 100MB
+    ///
+    bool operator()(int x, int y) const
+    {
+      return this->_adj[(x * this->_n + y) / chunk] & (1 << ((x * this->_n + y) % chunk));
+    }
+    ///
+    /// @ brief Build the adjacent matrix
+    ///
+    auto build_implementation(int n, int m, const std::vector<key_pair> &edges) const
+    {
+      int size = (n*n) / chunk + 1;
+      // Initialize vector
+      std::vector<int> matrix.reserve(size);
+      // Fill data
+      for (int i = 0; i < m; i++)
+      {
+        int a = edges[i].a;
+        int b = edges[i].b;
+        _adj[(a * n + b) / chunk] |= (1 << ((a * n + b) % chunk));
+        _adj[(b * n + a) / chunk] |= (1 << ((b * n + a) % chunk));
+      }
+    }
+    ///
+    /// @brief Policy constructor
+    ///
+    compressed(int n, int m, const std::vector<key_pair> &edges, const std::vector<int> & deg):
+    _n(n),
+    _adj_matrix(build_implementation(n, m, edges)){}
+
+    ///
+    /// @brief Should the user pick this implementation?
+    static inline constexpr bool should_use(int n)
+    {
+      return static_cast<int64>(n * n) < 100LL * 1024 * 1024 * 8);
+    }
+  };
+} // end namespace adjacent_implementation
+
+///
 /// @brief Orbit Counting Algorithm
 ///
 /// @note Encapsulate Orca computation logic
 ///
-template<class Strategy>
-class ORCA
+template<class Strategy=adjacent_policy::default_impl>
+class ORCA : protected Strategy
 {
-  ///
-  /// @brief Nested class for a hashable key for pairs of nodes
-  ///
-  class key_pair
-  {
-  private:
-    // type alias
-    using self_type = key_pair;
-    // data memebers
-    int a;
-    int b;
-  public:
-    ///
-    /// @brief Constructor using initialization list
-    ///
-    key_pair(int a0, int b0): a( std::min(a0,b0) ), b( std::max(a0,b0) ){}
-    ///
-    /// @brief Comparison operator
-    ///
-    bool operator<(const self_type &other) const
-    {
-      if (this->a == other.a)
-      return this->b < other.b;
-      else
-      return this->a < other.a;
-    }
-    ///
-    /// @brief Equality Comparable
-    ///
-    bool operator==(const self_type &other) const
-    {
-      return this->a == other.a && this->b == other.b;
-    }
-    ///
-    /// @brief Hashable and usable in hashmaps
-    ///
-    struct hash
-    {
-      size_t operator()(const key_pair &x) const
-      {
-        return (x.a << 8) ^ (x.b << 0);
-      }
-    };
-  }; // end class key_pair
-
-  ///
-  /// @brief Nested class for a hashable key for triplet of nodes
-  ///
-  class key_triple
-  {
-  private:
-    // type alias
-    using self_type = key_triple;
-    // data members
-    int a;
-    int b;
-    int c;
-  public:
-    ///
-    /// @brief Constructor using initialization list
-    ///
-    key_triple(int a0, int b0, int c0): a(a0), b(b0), c(c0)
-    {
-      if (a > b) swap(a, b);
-      if (b > c) swap(b, c);
-      if (a > b) swap(a, b);
-    }
-    ///
-    /// @brief Comparison operator
-    ///
-    bool operator<(const self_type &other) const
-    {
-      if (this->a == other.a)
-      {
-        if (this->b == other.b)
-        return this->c < other.c;
-        else
-        return this->b < other.b;
-      } else {
-        return this->a < other.a;
-      }
-    }
-    ///
-    /// @brief EqualityComparable
-    ///
-    bool operator==(const self_type &other) const
-    {
-      return this->a == other.a && this->b == other.b && this->c == other.c;
-    }
-    ///
-    /// @brief Hashable and usable in hashmaps
-    ///
-    struct hash
-    {
-      size_t operator()(const key_triple &x) const
-      {
-        return (x.a << 16) ^ (x.b << 8) ^ (x.c << 0);
-      }
-    };
-  }; // end class key_triple
-
-  ///
-  /// @brief Exchangeable implementations of an adjacent matrix (policy-based design)
-  ///
-  namespace adjacent_implementation
-  {
-    ///
-    /// @brief adj is a vector of vector
-    ///
-    class default
-    {
-      // adj[x] - adjacency list of node x
-      std::vector<std::vector<int>> _adj;
-      // Reference on edges
-      const std::vector<int>& _deg;
-      ///
-      /// @brief Checks if an element equivalent to value appears within the range x, y
-      ///
-      bool operator()(int x, int y) const
-      {
-        auto first = this->_adj.at(x).cbegin();
-        auto last = std::advance(this->_adj.cbegin(), this->_deg.at(x));
-        return std::binary_search(first, last, y);
-      }
-      ///
-      /// @brief Build implementation
-      ///
-      auto build_implementation(int n, int m)
-      {
-        this->_adj.reserve(n);
-        for (int i = 0; i < n; i++)
-        {
-          _adj[i].reserve(_deg.at(i));
-        }
-      }
-      ///
-      /// @brief Policy constructor
-      ///
-      default(int n, int m, const std::vector<key_pair> &edges, const std::vector<int> & deg):
-      _deg(deg),
-      _adj(build_implementation(n, m)){}
-    };
-    ///
-    /// @brief adj is one long vector
-    ///
-    class compressed
-    {
-      int _n;
-      // compressed adjacency matrix
-      std::vector<int> _adj;
-      // chunk size
-      static constexpr int chunk = 8 * sizeof(int);
-
-      ///
-      /// @brief Checks if an element equivalent to value appears within the range x, y
-      ///
-      /// @note Strategy is set up adjacency matrix if it's smaller than 100MB
-      ///
-      bool operator()(int x, int y) const
-      {
-        return this->_adj[(x * this->_n + y) / chunk] & (1 << ((x * this->_n + y) % chunk));
-      }
-      ///
-      /// @ brief Build the adjacent matrix
-      ///
-      auto build_implementation(int n, int m, const std::vector<key_pair> &edges) const
-      {
-        int size = (n*n) / chunk + 1;
-        // Initialize vector
-        std::vector<int> matrix.reserve(size);
-        // Fill data
-        for (int i = 0; i < m; i++)
-        {
-          int a = edges[i].a;
-          int b = edges[i].b;
-          _adj[(a * n + b) / chunk] |= (1 << ((a * n + b) % chunk));
-          _adj[(b * n + a) / chunk] |= (1 << ((b * n + a) % chunk));
-        }
-      }
-      ///
-      /// @brief Policy constructor
-      ///
-      compressed(int n, int m, const std::vector<key_pair> &edges, const std::vector<int> & deg):
-      _n(n),
-      _adj_matrix(build_implementation(n, m, edges)){}
-    };
-  }
-
   // Type aliases for readibility
   using common2_type = std::unordered_map<key_pair, int, key_pair::hash>;
   using common3_type = std::unordered_map<key_triple, int, key_triple::hash>;
@@ -213,7 +221,6 @@ class ORCA
   common2_type common2;
   // stores the number of nodes that are adjacent to some triplets of nodes
   common3_type common3;
-
   // number of nodes
   int n;
   // number of edges
@@ -226,10 +233,6 @@ class ORCA
   std::vector<std::vector<std::pair<int,int>>> inc;
   // orbit[x][o] - how many times does node x participate in orbit o
   std::vector<std::vector<int>> orbit;
-
-  /// Store a different runtime strategy: can be adjacent_list (default) or adjacent_matrix
-  std::function< bool( int, int ) > adjacent;
-
   ///
   /// @brief Return the value stored at the key, else 0
   ///
@@ -275,11 +278,7 @@ class ORCA
   ///
   ORCA(int n, int m, const std::vector<key_pair> &edges, const std::vector<int> &deg):
   adjacent(chose_strategy(n)),
-
   {
-
-
-
     inc = (PII **)malloc(n * sizeof(PII *));
     for (int i = 0; i < n; i++) {
       inc[i] = (PII *)malloc(deg[i] * sizeof(PII));
@@ -759,97 +758,7 @@ class ORCA
     endTime_all = endTime;
     printf("total: %.2f sec\n", (double)(endTime_all - startTime_all) / CLOCKS_PER_SEC);
 
-  }
-
-
-  int init(string afin, string afout) {
-    // open input, output files
-    fin.open(afin.c_str(), fstream::in);
-    fout.open(afout.c_str(), fstream::out | fstream::binary);
-
-    if (fin.fail()) {
-      cerr << "Failed to open file " << afin << endl;
-      return 0;
-    }
-
-    if (fout.fail()) {
-      cerr << "Failed to open file " << afout << endl;
-      return 0;
-    }
-
-    // read input graph
-    fin >> n >> m;
-    int d_max = 0;
-    edges = (PAIR *)malloc(m * sizeof(PAIR));
-    deg = (int *)calloc(n, sizeof(int));
-    for (int i = 0; i < m; i++) {
-      int a, b;
-      fin >> a >> b;
-      if (!(0 <= a && a < n) || !(0 <= b && b < n)) {
-        cerr << "Node ids should be between 0 and n-1." << endl;
-        return 0;
-      }
-      if (a == b) {
-        cerr << "Self loops (edge from x to x) are not allowed." << endl;
-        return 0;
-      }
-      deg[a]++;
-      deg[b]++;
-      edges[i] = PAIR(a, b);
-    }
-
-    for (int i = 0; i < n; i++) {
-      d_max = max(d_max, deg[i]);
-    }
-
-    printf("nodes: %d\n", n);
-    printf("edges: %d\n", m);
-    printf("max degree: %d\n", d_max);
-    fin.close();
-
-    if ((int)(set<PAIR>(edges, edges + m).size()) != m) {
-      cerr << "Input file contains duplicate undirected edges." << endl;
-      return 0;
-    }
-
-    // set up adjacency, incidence lists
-    adj = (int **)malloc(n * sizeof(int *));
-    for (int i = 0; i < n; i++) {
-      adj[i] = (int *)malloc(deg[i] * sizeof(int));
-    }
-
-    inc = (PII **)malloc(n * sizeof(PII *));
-    for (int i = 0; i < n; i++) {
-      inc[i] = (PII *)malloc(deg[i] * sizeof(PII));
-    }
-
-    int *d = (int *)calloc(n, sizeof(int));
-    for (int i = 0; i < m; i++) {
-      int a = edges[i].a, b = edges[i].b;
-      adj[a][d[a]] = b;
-      adj[b][d[b]] = a;
-      inc[a][d[a]] = PII(b, i);
-      inc[b][d[b]] = PII(a, i);
-      d[a]++;
-      d[b]++;
-    }
-
-    for (int i = 0; i < n; i++) {
-      sort(adj[i], adj[i] + deg[i]);
-      sort(inc[i], inc[i] + deg[i]);
-    }
-
-    // initialize orbit counts
-    orbit = (int64 **)malloc(n * sizeof(int64 *));
-    for (int i = 0; i < n; i++) {
-      orbit[i] = (int64 *)calloc(73, sizeof(int64));
-    }
-
-    // Free d
-    free(d);
-
-    return 1;
-  }
+  } // end count_orbits
 
   ///
   /// @brief Format the results in an output string
@@ -886,82 +795,115 @@ class ORCA
 
 }; // end class ORCA
 
-///
-/// @brief Check read values validity
-///
-void check_validity(int a, int b, int n)
-{
-  if (!(0 <= a && a < n) || !(0 <= b && b < n))
-  {
-    throw std::invalid_argument("Node ids should be between 0 and n-1.");
-  }
 
-  if (a == b)
-  {
-    throw std::invalid_argument("Self loops (edge from x to x) are not allowed.");
-  }
-}
-
-///
-/// @brief Check for duplicated undirected edges.
-///
-void check_duplicated_undirected_edges(int m, const std::vector<key_pair> &edges)
-{
-  auto first = edges.cbegin();
-  auto last = std::advance(edges.cbegin(), m);
-  if ( std::set<key_pair>(first, last).size() != m)
-  {
-    throw std::invalid_argument("Input file contains duplicate undirected edges.");
-  }
-}
 ///
 /// @brief Intialize an ORCA algorithm from an input graph file
 ///
-ORCA orca_from_file(const std::string &input_file)
+class OrcaParser
 {
-  std::string line;
-  std::ifstream myfile (input_file);
   int n;
   int m;
-  if (myfile.is_open())
+  int dmax;
+  std::vector<key_pair> edges;
+  std::vector<int> deg;
+
+  ///
+  /// @brief Check read values validity
+  ///
+  void check_validity(int a, int b, int n)
   {
-    // Read graph properties
-    myfile >> n >> m;
-    int d_max = 0;
-    // Initialize vectors to their size
-    std::vector<key_pair> edges(m);
-    std::vector<int> deg(n);
-    // Populate vectors
-    for (int i = 0; i < m; i++)
+    if (!(0 <= a && a < n) || !(0 <= b && b < n))
     {
-      int a;
-      int b;
-      myfile >> a >> b;
-      check_validity(a, b, n);
-      deg[a]++;
-      deg[b]++;
-      edges[i] = key_pair(a, b);
+      throw std::invalid_argument("Node ids should be between 0 and n-1.");
     }
 
-    for (int i = 0; i < n; i++)
+    if (a == b)
     {
-      d_max = std::max(d_max, deg[i]);
+      throw std::invalid_argument("Self loops (edge from x to x) are not allowed.");
     }
-
-    std::cout << "Number of nodes:" << n << std::endl;
-    std::cout << "Number of edges:" << m << std::endl;
-    std::cout << "Max degree:" << d_max << std::endl
-
-    myfile.close();
-
-  } else {
-    std::cout << "Unable to open file";
   }
 
-  check_duplicated_undirected_edges(m, edges);
+  ///
+  /// @brief Check for duplicated undirected edges.
+  ///
+  void check_duplicated_undirected_edges(int m, const std::vector<key_pair> &edges)
+  {
+    auto first = edges.cbegin();
+    auto last = std::advance(edges.cbegin(), m);
+    if ( std::set<key_pair>(first, last).size() != m)
+    {
+      throw std::invalid_argument("Input file contains duplicate undirected edges.");
+    }
+  }
 
-  // Call to the constructor
-  return ORCA(n, m, edes, deg);
+  ///
+  /// @brief Read the number of nodes and edges from file
+  ///
+  std::istream& read_graph_properties_from(std::ifstream& stream)
+  {
+    stream >> this->n >> this->m;
+    return stream;
+  }
+
+  ///
+  /// @brief Fills the data structures reading from file
+  ///
+  std::istream& populate_data_from(std::ifstream &stream)
+  {
+    int a;
+    int b;
+    while(stream >> a >> b)
+    {
+      check_validity(a, b, this->n);
+      this->deg[a]++;
+      this->deg[b]++;
+      this->edges[i] = key_pair(a, b);
+    }
+    return stream;
+  }
+
+  ///
+  /// @brief Compute maximum degree of the graph
+  ///
+  void compute_maximum_degree()
+  {
+    this-> d_max = *std::max_element(this->deg.begin(), this->deg.end());
+  }
+
+public:
+
+  void parse(const std::string &input_file)
+  {
+    std::ifstream myfile (input_file);
+    if (myfile.is_open())
+    {
+      read_graph_properties_from(myfile);
+
+      edges.reserve(this->m);
+      deg.reserve(this->n);
+
+      populate_data_from(myfile);
+      compute_maximum_degree();
+      check_duplicated_undirected_edges(this->m, this->edges);
+
+      std::cout << "Number of nodes:" << this->n << std::endl;
+      std::cout << "Number of edges:" << this->m << std::endl;
+      std::cout << "Max degree:" << this->d_max << std::endl
+
+      myfile.close();
+
+    } else {
+      std::cout << "Unable to open file";
+    }
+  }
+} // end OrcaParser
+
+std::ostream& operator <<(std::ostream& stream, OrcaParser const& p)
+{
+  stream << "Number of nodes: " << this->n;
+  stream << "Number of edges: " << this->m;
+  stream << "Maximum degree: " << this->d_max;
+  return stream;
 }
 
 ///
@@ -977,12 +919,12 @@ std::string generate_output_filename(const std::string &input_file)
 }
 
 ///
-/// @brief Calculate the Graphlet Degree Vector (GDV) for the given graph.
+/// @brief Calculate the Graphlet Degree Vector (GDV) for the given graph with the given implementation policy
 ///
-std::string compute_graphlet_degree_vector(const std::string &input_file)
+template<typename Policy=adjacent_policy::default_impl>
+std::string graphlet_degree_vector_analysis(OrcaParser &parser)
 {
-  std::cout << "Initialize ORCA from file " << input_file << std::endl;
-  auto computer = orca_from_file(input_file);
+  auto computer = ORCA<Policy>();
 
   std::cout << "Counting orbits of graphlets on 5 nodes." << std::endl;
   computer.count_orbits();
@@ -993,6 +935,22 @@ std::string compute_graphlet_degree_vector(const std::string &input_file)
   computer.write_results_to(output_file);
 
   return output_file;
+}
+
+std::string orca_from_file()
+{
+  std::cout << "Initialize ORCA from file " << input_file << std::endl;
+
+  OrcaParser parser;
+  parser.parse(input_file);
+  std::cout << parser << std::endl;
+
+  if( adjacent_policy::compressed::should_use(n))
+  {
+    graphlet_degree_vector_analysis<adjacent_policy::compressed>(parser);
+  }else{
+    graphlet_degree_vector_analysis<>(parser);
+  }
 }
 
 #endif
