@@ -148,7 +148,7 @@ namespace adjacent_policy
     ///
     /// @note common interface between policies
     ///
-    bool adjacent(int x, int y) const
+    bool are_adjacent(int x, int y) const
     {
       auto first = this->_adj.at(x).cbegin();
       auto last = first;
@@ -217,7 +217,7 @@ namespace adjacent_policy
     ///
     /// @note common interface between policies
     ///
-    bool adjacent(int x, int y) const
+    bool are_adjacent(int x, int y) const
     {
       return this->_adj[(x * this->_n + y) / chunk] & (1 << ((x * this->_n + y) % chunk));
     }
@@ -266,7 +266,7 @@ private:
   // inc[x] - incidence list of node x: (y, edge id)
   std::vector<std::vector<std::pair<int,int>>> _inc;
   // orbit[x][o] - how many times does node x participate in orbit o
-  std::vector<std::vector<int>> _orbits;
+  std::vector<std::vector<big_int>> _orbits;
   // ORCA alorithm state (member data)
   common2_type _common2;
   // stores the number of nodes that are adjacent to some triplets of nodes
@@ -277,7 +277,7 @@ private:
   /// @note avoid inflation of the map due to lookups of absent elements.
   ///
   template<class key, class T>
-  T find_or_zero(key x, const std::unordered_map<key, T, typename key::hash>& map)
+  T find_or_zero(key x, const std::unordered_map<key, T, typename key::hash>& map) const
   {
     auto it = map.find(x);
     return (it == map.end()) ? it->second : 0;
@@ -410,7 +410,7 @@ public:
     auto& common3 = this->_common3;
     auto& orbit = this->_orbits;
     // alias on policy operator (lambda function)
-    auto adjacent = [this](int x, int y){ return this->adjacent(x, y);};
+    auto adjacent = [this](int x, int y){ return this->_policy.are_adjacent(x, y);};
 
     //// Old algorithm
 
