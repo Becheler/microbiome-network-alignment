@@ -122,12 +122,21 @@ namespace adjacent_policy
   ///
   class default_impl
   {
-  protected:
+  public:
+    // type used for composition in the ORCA host class
+    using adjacent_matrix_type = std::vector<std::vector<int>>;
+    // Precision for very large number of nodes
+    using big_int = unsigned int;
+  private:
     // Reference on edges
     const std::vector<int>& _deg;
     // adj[x] - adjacency list of node x
-    std::vector<std::vector<int>> _adj;
+    adjacent_matrix_type _adj;
   public:
+    ///
+    /// @brief Read only access
+    ///
+    const adjacent_matrix_type & get_adjacent_matrix() const { return _adj;}
     ///
     /// @brief Policy constructor
     ///
@@ -136,6 +145,8 @@ namespace adjacent_policy
     _adj(build_implementation(n, deg)){}
     ///
     /// @brief Checks if an element equivalent to value appears within the range x, y
+    ///
+    /// @note common interface between policies
     ///
     bool adjacent(int x, int y) const
     {
@@ -164,13 +175,26 @@ namespace adjacent_policy
   ///
   class compressed
   {
+  public:
+    // type used for composition in the ORCA host class
+    using adjacent_matrix_type = std::vector<int>;
+    // Precision for very large number of nodes
+    using big_int = unsigned int;
   private:
     // number of nodes
     int _n;
     // chunk size
     static constexpr int chunk = 8 * sizeof(int);
+    // compressed adjacency matrix
+    adjacent_matrix_type _adj;
+  public:
+    // Read only access
+    const adjacent_matrix_type& get_adjacent_matrix() const {return _adj;}
+    //
     ///
     /// @ brief Build the adjacent matrix
+    ///
+    /// @note Strategy is set up adjacency matrix if it's smaller than 100MB
     ///
     std::vector<int> build_implementation(int n, int m, const std::vector<key_pair> &edges) const
     {
@@ -187,14 +211,11 @@ namespace adjacent_policy
       }
       return adj;
     }
-  protected:
-    // compressed adjacency matrix
-    std::vector<int> _adj;
   public:
     ///
     /// @brief Checks if an element equivalent to value appears within the range x, y
     ///
-    /// @note Strategy is set up adjacency matrix if it's smaller than 100MB
+    /// @note common interface between policies
     ///
     bool adjacent(int x, int y) const
     {
@@ -208,9 +229,9 @@ namespace adjacent_policy
     _adj(build_implementation(n, m, edges)){}
     ///
     /// @brief Should the user pick this implementation?
-    static inline constexpr bool should_use(int n)
+    static inline constexpr bool should_use_based_on(int nb_nodes)
     {
-      return static_cast<long long>(n * n) < 100LL * 1024 * 1024 * 8;
+      return static_cast<big_int>(nb_nodes * nb_nodes) < 100LL * 1024 * 1024 * 8;
     }
 
   };
@@ -222,16 +243,14 @@ namespace adjacent_policy
 /// @note Encapsulate Orca computation logic
 ///
 template<class Strategy=adjacent_policy::default_impl>
-class ORCA : protected Strategy
+class ORCA
 {
+private:
   // Type aliases for readibility
   using common2_type = std::unordered_map<key_pair, int, key_pair::hash>;
   using common3_type = std::unordered_map<key_triple, int, key_triple::hash>;
-
-  // ORCA alorithm state (member data)
-  common2_type _common2;
-  // stores the number of nodes that are adjacent to some triplets of nodes
-  common3_type _common3;
+  using strategy_type = Strategy;
+  using big_int = strategy_type::big_int;
   // number of nodes
   int _n;
   // number of edges
@@ -240,10 +259,18 @@ class ORCA : protected Strategy
   std::vector<int> _deg;
   // list of edge
   std::vector<key_pair> _edges;
+  // Implementation of adjacent matrix is variable
+  strategy_type _policy;
+  // Reference on the policy class member
+  const strategy_type::adjacent_matrix_type & _adj;
   // inc[x] - incidence list of node x: (y, edge id)
   std::vector<std::vector<std::pair<int,int>>> _inc;
   // orbit[x][o] - how many times does node x participate in orbit o
   std::vector<std::vector<int>> _orbits;
+  // ORCA alorithm state (member data)
+  common2_type _common2;
+  // stores the number of nodes that are adjacent to some triplets of nodes
+  common3_type _common3;
   ///
   /// @brief Return the value stored at the key, else 0
   ///
@@ -275,27 +302,27 @@ class ORCA : protected Strategy
   ///
   /// @brief Initialize an incidence matrix
   ///
-  auto reserve_incidence_matrix(int n, int m, const std::vector<int> &deg) const
+  auto reserve_incidence_matrix(int n, const std::vector<int> &deg) const
   {
     std::vector< std::vector< std::pair<int,int> >> inc(n);
     for(std::size_t i = 0; auto &it : inc)
     {
       it.reserve(deg[i]);
     }
-
     return inc;
   }
 
   ///
   /// @brief Initialize a the orbit atrix
   ///
-  auto reserve_orbits(int n) const
+  auto reserve_orbits(big_int n) const
   {
-    std::vector<std::vector<long long>> orbits(n);
+    std::vector<std::vector<big_int>> orbits(n);
     for (auto & it : orbits)
     {
       it.reserve(73);
     }
+    return orbits;
   }
 
   ///
@@ -310,6 +337,7 @@ class ORCA : protected Strategy
     auto last = this->container.begin() + i + j;
     std::sort(first, last);
   }
+public:
   /// @brief Move constructor
   ///
   /// @note Move semantics: edges and deg content are "stolen" from the previous context
@@ -319,8 +347,9 @@ class ORCA : protected Strategy
   _m(m),
   _deg(std::move(deg)),
   _edges(std::move(edges)),
-  Strategy(n, m, this->edges, this->deg),
-  _inc(reserve_incidence_matrix(n)),
+  _policy(n, m, this->_edges, this->_deg),
+  _adj(_policy.get_adjacent_matrix()),
+  _inc(reserve_incidence_matrix(n, this->_deg)),
   _orbits(reserve_orbits(n))
   {
 
@@ -347,9 +376,17 @@ class ORCA : protected Strategy
       sort_in_range(this->_adj, i, i + deg[i]);
       sort_in_range(this->_inc, i, i + deg[i]);
     }
-
+  } // end constructor
+  ///
+  /// @brief Write accumulated results to a file
+  ///
+  void write_results_to(const std::string &output_file) const
+  {
+    std::ofstream myfile;
+    myfile.open (output_file);
+    myfile << format();
+    myfile.close();
   }
-
   ///
   /// @brief Count graphlets on max 5 nodes
   ///
@@ -437,7 +474,7 @@ class ORCA : protected Strategy
     // count full graphlets
     printf("stage 2 - counting full graphlets\n");
 
-    std::vector<long long> C5(n);
+    std::vector<big_int> C5(n);
     std::vector<int> neigh(n);
     std::vector<int> neigh2(n);
 
@@ -535,17 +572,17 @@ class ORCA : protected Strategy
         }
       }
 
-      long long f_71 = 0, f_70 = 0, f_67 = 0, f_66 = 0, f_58 = 0, f_57 = 0;                                // 14
-      long long f_69 = 0, f_68 = 0, f_64 = 0, f_61 = 0, f_60 = 0, f_55 = 0, f_48 = 0, f_42 = 0, f_41 = 0;  // 13
-      long long f_65 = 0, f_63 = 0, f_59 = 0, f_54 = 0, f_47 = 0, f_46 = 0, f_40 = 0;                      // 12
-      long long f_62 = 0, f_53 = 0, f_51 = 0, f_50 = 0, f_49 = 0, f_38 = 0, f_37 = 0, f_36 = 0;            // 8
-      long long f_44 = 0, f_33 = 0, f_30 = 0, f_26 = 0;                                                    // 11
-      long long f_52 = 0, f_43 = 0, f_32 = 0, f_29 = 0, f_25 = 0;                                          // 10
-      long long f_56 = 0, f_45 = 0, f_39 = 0, f_31 = 0, f_28 = 0, f_24 = 0;                                // 9
-      long long f_35 = 0, f_34 = 0, f_27 = 0, f_18 = 0, f_16 = 0, f_15 = 0;                                // 4
-      long long f_17 = 0;                                                                                  // 5
-      long long f_22 = 0, f_20 = 0, f_19 = 0;                                                              // 6
-      long long f_23 = 0, f_21 = 0;                                                                        // 7
+      big_int f_71 = 0, f_70 = 0, f_67 = 0, f_66 = 0, f_58 = 0, f_57 = 0;                                // 14
+      big_int f_69 = 0, f_68 = 0, f_64 = 0, f_61 = 0, f_60 = 0, f_55 = 0, f_48 = 0, f_42 = 0, f_41 = 0;  // 13
+      big_int f_65 = 0, f_63 = 0, f_59 = 0, f_54 = 0, f_47 = 0, f_46 = 0, f_40 = 0;                      // 12
+      big_int f_62 = 0, f_53 = 0, f_51 = 0, f_50 = 0, f_49 = 0, f_38 = 0, f_37 = 0, f_36 = 0;            // 8
+      big_int f_44 = 0, f_33 = 0, f_30 = 0, f_26 = 0;                                                    // 11
+      big_int f_52 = 0, f_43 = 0, f_32 = 0, f_29 = 0, f_25 = 0;                                          // 10
+      big_int f_56 = 0, f_45 = 0, f_39 = 0, f_31 = 0, f_28 = 0, f_24 = 0;                                // 9
+      big_int f_35 = 0, f_34 = 0, f_27 = 0, f_18 = 0, f_16 = 0, f_15 = 0;                                // 4
+      big_int f_17 = 0;                                                                                  // 5
+      big_int f_22 = 0, f_20 = 0, f_19 = 0;                                                              // 6
+      big_int f_23 = 0, f_21 = 0;                                                                        // 7
 
       for (int nx1 = 0; nx1 < deg[x]; nx1++) {
         int a = inc[x][nx1].first, xa = inc[x][nx1].second;
@@ -838,18 +875,7 @@ class ORCA : protected Strategy
       }
     }
     return buffer;
-  }
-
-  ///
-  /// @brief Write accumulated results to a file
-  ///
-  void write_results_to(const std::string &output_file) const
-  {
-    std::ofstream myfile;
-    myfile.open (output_file);
-    myfile << format();
-    myfile.close();
-  }
+  } // end count_orbits
 
 }; // end class ORCA
 
@@ -889,7 +915,7 @@ class OrcaParser
     auto first = edges.cbegin();
     auto last = first;
     std::advance(last, m);
-    if ( std::set<key_pair>(first, last).size() != m)
+    if ( static_cast<int>(std::set<key_pair>(first, last).size()) != m)
     {
       throw std::invalid_argument("Input file contains duplicate undirected edges.");
     }
@@ -932,8 +958,14 @@ class OrcaParser
   }
 
 public:
-  auto nb_nodes(){return this->_n;}
 
+  auto n(){return this->_n;}
+  auto m(){return this->_m;}
+  // Transfer the data, invalidates the parser
+  auto take_edges() {return std::move(this->_edges);}
+  // Transfer the data, invalidates the parser
+  auto take_degrees() {return std::move(this->_deg);}
+  // Parse graph from input file
   void parse(const std::string &input_file)
   {
     std::ifstream myfile (input_file);
@@ -993,7 +1025,14 @@ std::string generate_output_filename_from(const std::string &input_file)
 template<typename Policy=adjacent_policy::default_impl>
 std::string graphlet_degree_vector_analysis(OrcaParser &parser, const std::string& output_file)
 {
-  auto computer = ORCA<Policy>();
+  auto computer = ORCA<Policy>
+  (
+    parser.n(),
+    parser.m(),
+    std::move(parser.take_edges()),
+    std::move(parser.take_degrees())
+  );
+  // parser has now been emptied from its content
 
   std::cout << "Counting orbits of graphlets on 5 nodes." << std::endl;
   computer.count_orbits();
@@ -1014,7 +1053,8 @@ std::string read_count_write_orca(const std::string& input_file, const std::stri
   OrcaParser parser;
   parser.parse(input_file);
   std::cout << parser << std::endl;
-  if( adjacent_policy::compressed::should_use(parser.nb_nodes())){
+
+  if( adjacent_policy::compressed::should_use_based_on(parser.n())){
     graphlet_degree_vector_analysis<adjacent_policy::compressed>(parser, output_file);
   }else{
     graphlet_degree_vector_analysis<>(parser, output_file);
