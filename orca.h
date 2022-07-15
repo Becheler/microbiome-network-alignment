@@ -117,6 +117,8 @@ public:
 ///
 namespace adjacent_policy
 {
+  // or `long long` or  `boost::multiprecision::cpp_int` (versatile) or `boost::multiprecision::cpp_int` (fast)
+  using big_int = unsigned int;
   ///
   /// @brief adj is a vector of vector
   ///
@@ -126,7 +128,7 @@ namespace adjacent_policy
     // type used for composition in the ORCA host class
     using adjacent_matrix_type = std::vector<std::vector<int>>;
     // Precision for very large number of nodes
-    using big_int = unsigned int;
+    using big_int = adjacent_policy::big_int;
   private:
     // Reference on edges
     const std::vector<int>& _deg;
@@ -155,6 +157,13 @@ namespace adjacent_policy
       std::advance(last, this->_deg.at(x));
       return std::binary_search(first, last, y);
     }
+    ///
+    /// @brief Harmonize information access through different policies
+    ///
+    auto operator()(int x, int y) const
+    {
+      return this->_adj.at(x).at(y);
+    }
   private:
     ///
     /// @brief Build implementation
@@ -179,7 +188,7 @@ namespace adjacent_policy
     // type used for composition in the ORCA host class
     using adjacent_matrix_type = std::vector<int>;
     // Precision for very large number of nodes
-    using big_int = unsigned int;
+    using big_int = adjacent_policy::big_int;
   private:
     // number of nodes
     int _n;
@@ -220,6 +229,13 @@ namespace adjacent_policy
     bool are_adjacent(int x, int y) const
     {
       return this->_adj[(x * this->_n + y) / chunk] & (1 << ((x * this->_n + y) % chunk));
+    }
+    ///
+    /// @brief Harmonize information access through different policies
+    ///
+    auto operator()(int x, int y) const
+    {
+      return  this->_adj.at(x).at(y);
     }
     ///
     /// @brief Policy constructor
