@@ -433,13 +433,9 @@ public:
 
     for (int i = 0; i < _n; i++)
     {
-      std::cout << "sorting adj " << i << " " << _deg.at(i) << std::endl;
       this->_policy.sort(i, _deg[i]);
-
-      std::cout << "sorting inc" << i << " " << _deg[i] << std::endl;
       sort_incidence_matrix_range(i, _deg[i]);
     }
-    std::cout << "ORCA constructed" << std::endl;
   } // end constructor
   ///
   /// @brief Write accumulated results to a file
