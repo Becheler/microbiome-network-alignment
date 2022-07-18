@@ -153,9 +153,13 @@ namespace adjacent_policy
     ///
     bool are_adjacent(int x, int y) const
     {
-      auto first = this->_adj.at(x).cbegin();
+      // Preconditions
+      assert(x < _adj.size());
+      assert( _deg.at(x) < _adj.at(x).size() );
+
+      auto first = _adj.at(x).cbegin();
       auto last = first;
-      std::advance(last, this->_deg.at(x));
+      std::advance(last, _deg.at(x));
       return std::binary_search(first, last, y);
     }
     ///
@@ -163,21 +167,30 @@ namespace adjacent_policy
     ///
     auto operator()(int x, int y) const
     {
-      return this->_adj.at(x).at(y);
+      // Preconditions
+      assert(x < _adj.size() );
+      assert(y < _adj.at(x).size() );
+      return _adj.at(x).at(y);
     }
     ///
     /// @brief Harmonize information access through different policies
     ///
     auto& operator()(int x, int y)
     {
-      return this->_adj.at(x).at(y);
+      // Preconditions
+      assert(x < _adj.size());
+      assert(y < _adj.at(x).size());
+      return _adj.at(x).at(y);
     }
     ///
     /// @brief Sort elements in a range along the 2nd dimension
     ///
     void sort(int i, int j)
     {
-      assert(i > j);
+      // Preconditions
+      assert(i < _adj.size());
+      assert(j < _adj.size());
+      assert(i + j < _adj.size());
       // iterator on first elements of ith vector second dimension
       auto first = _adj.at(i).begin();
       auto last  = _adj.at(i).begin() + j;
@@ -192,7 +205,7 @@ namespace adjacent_policy
       std::vector<std::vector<int>> adj(n);
       for (std::size_t i = 0; auto& it : adj)
       {
-        it.reserve(deg.at(i));
+        it.resize(deg.at(i));
       }
       return adj;
     }
@@ -216,8 +229,6 @@ namespace adjacent_policy
     // compressed adjacency matrix
     adjacent_matrix_type _adj;
   public:
-    // Read only access
-    const adjacent_matrix_type& get_adjacent_matrix() const {return _adj;}
     //
     ///
     /// @ brief Build the adjacent matrix
@@ -226,16 +237,13 @@ namespace adjacent_policy
     ///
     std::vector<int> build_implementation(int n, int m, const std::vector<key_pair> &edges) const
     {
-      int size = (n*n) / chunk + 1;
-      // Initialize vector
-      std::vector<int> adj(size);
-      // Fill data
-      for (int i = 0; i < m; i++)
+      // Initialize a zero vector
+      std::vector<int> adj(n*n, 0);
+      // Set matrix to 1 since a and b are connected
+      for (const auto & edge : edges)
       {
-        int a = edges[i].a;
-        int b = edges[i].b;
-        adj[(a * n + b) / chunk] |= (1 << ((a * n + b) % chunk));
-        adj[(b * n + a) / chunk] |= (1 << ((b * n + a) % chunk));
+        adj.at(edge.a * n + edge.b) = 1;
+        adj.at(edge.b * n + edge.a) = 1;
       }
       return adj;
     }
@@ -247,30 +255,36 @@ namespace adjacent_policy
     ///
     bool are_adjacent(int x, int y) const
     {
-      return this->_adj[(x * this->_n + y) / chunk] & (1 << ((x * this->_n + y) % chunk));
+      return _adj[(x * _n + y) / chunk] & (1 << ((x * _n + y) % chunk));
     }
     ///
     /// @brief Harmonize information access through different policies
     ///
     auto operator()(int x, int y) const
     {
-      return  this->_adj.at(x * this->_n + y );
+      size_t index = x * _n + y;
+      assert(index < _adj.size());
+      return _adj.at(index);
     }
     ///
     /// @brief Harmonize information access through different policies
     ///
     auto& operator()(int x, int y)
     {
-      return  this->_adj.at(x * this->_n + y );
+      size_t index = x * _n + y;
+      assert(index < _adj.size());
+      return  _adj.at(x * _n + y );
     }
     ///
     /// @brief Sort elements in a range
     ///
     void sort(int i, int j)
     {
-      assert(i > j);
-      auto first = this->_adj.begin() + i;
-      auto last = this->_adj.begin() + i + j;
+      auto index = i * _n ;
+      std::cout << i << " " << j << " " << index << " " << _adj.size() << std::endl;
+      assert( index < _adj.size());
+      auto first = _adj.begin() + index ;
+      auto last = _adj.begin() + index + j;
       std::sort(first, last);
     }
     ///
@@ -313,8 +327,6 @@ private:
   std::vector<key_pair> _edges;
   // Implementation of adjacent matrix is variable
   strategy_type _policy;
-  // Reference on the policy class member
-  const strategy_type::adjacent_matrix_type & _adj;
   // inc[x] - incidence list of node x: (y, edge id)
   std::vector<std::vector<std::pair<int,int>>> _inc;
   // orbit[x][o] - how many times does node x participate in orbit o
@@ -354,12 +366,12 @@ private:
   ///
   /// @brief Initialize an incidence matrix
   ///
-  auto reserve_incidence_matrix(int n, const std::vector<int> &deg) const
+  auto resize_incidence_matrix(int n) const
   {
     std::vector< std::vector< std::pair<int,int> >> inc(n);
-    for(std::size_t i = 0; auto &it : inc)
+    for(auto &it : inc)
     {
-      it.reserve(deg[i]);
+      it.resize(n);
     }
     return inc;
   }
@@ -367,12 +379,12 @@ private:
   ///
   /// @brief Initialize a the orbit atrix
   ///
-  auto reserve_orbits(big_int n) const
+  auto resize_orbits(big_int n) const
   {
     std::vector<std::vector<big_int>> orbits(n);
     for (auto & it : orbits)
     {
-      it.reserve(73);
+      it.resize(73);
     }
     return orbits;
   }
@@ -380,12 +392,11 @@ private:
   ///
   /// @brief Sort elements in a specific range [first, last]
   ///
-  template<typename Container>
-  void sort_in_range(Container& container, int i, int j)
+  void sort_incidence_matrix_range(int i, int j)
   {
-    assert(i > j);
-    auto first = container.begin() + i;
-    auto last = container.begin() + i + j;
+    // Preconditions
+    auto first = _inc.at(i).begin();
+    auto last =  _inc.at(i).begin() + j;
     std::sort(first, last);
   }
 public:
@@ -399,11 +410,9 @@ public:
   _deg(std::move(deg)),
   _edges(std::move(edges)),
   _policy(n, m, this->_edges, this->_deg),
-  _adj(_policy.get_adjacent_matrix()),
-  _inc(reserve_incidence_matrix(n, this->_deg)),
-  _orbits(reserve_orbits(n))
+  _inc(resize_incidence_matrix(n)),
+  _orbits(resize_orbits(n))
   {
-
     std::vector<int> d(n);
 
     for (std::size_t i = 0; auto const & it : edges)
@@ -422,11 +431,15 @@ public:
       d[b]++;
     }
 
-    for (int i = 0; i < n; i++)
+    for (int i = 0; i < _n; i++)
     {
-      this->_policy.sort(i, i + deg[i]);
-      sort_in_range(this->_inc, i, i + deg[i]);
+      std::cout << "sorting adj " << i << " " << _deg.at(i) << std::endl;
+      this->_policy.sort(i, _deg[i]);
+
+      std::cout << "sorting inc" << i << " " << _deg[i] << std::endl;
+      sort_incidence_matrix_range(i, _deg[i]);
     }
+    std::cout << "ORCA constructed" << std::endl;
   } // end constructor
   ///
   /// @brief Write accumulated results to a file
@@ -994,6 +1007,8 @@ class OrcaParser
       check_validity(a, b, this->_n);
       this->_deg[a]++;
       this->_deg[b]++;
+
+      assert( i < this->_edges.size());
       this->_edges.at(i) = key_pair(a, b);
       i=i+1;
     }
@@ -1024,15 +1039,16 @@ public:
     {
       read_graph_properties_from(myfile);
 
-      this->_edges.reserve(this->_m);
-      this->_deg.reserve(this->_n);
+      std::cout << "Number of nodes:" << this->_n << std::endl;
+      std::cout << "Number of edges:" << this->_m << std::endl;
+
+      this->_edges.resize(this->_m, key_pair(0,0));
+      this->_deg.resize(this->_n);
 
       populate_data_from(myfile);
       compute_maximum_degree();
       check_duplicated_undirected_edges(this->_m, this->_edges);
 
-      std::cout << "Number of nodes:" << this->_n << std::endl;
-      std::cout << "Number of edges:" << this->_m << std::endl;
       std::cout << "Max degree:" << this->_dmax << std::endl;
 
       myfile.close();
@@ -1052,9 +1068,9 @@ public:
 ///
 std::ostream& operator <<(std::ostream& stream, OrcaParser const& p)
 {
-  stream << "Number of nodes: " << p._n;
-  stream << "Number of edges: " << p._m;
-  stream << "Maximum degree: " << p._dmax;
+  stream << "Number of nodes: " << p._n << std::endl;
+  stream << "Number of edges: " << p._m << std::endl;
+  stream << "Maximum degree: " << p._dmax << std::endl;
   return stream;
 }
 
@@ -1076,6 +1092,9 @@ std::string generate_output_filename_from(const std::string &input_file)
 template<typename Policy=adjacent_policy::default_impl>
 std::string graphlet_degree_vector_analysis(OrcaParser &parser, const std::string& output_file)
 {
+
+  std::cout << "Initializing ORCA algorithm from parser" << std::endl;
+
   auto computer = ORCA<Policy>
   (
     parser.n(),
@@ -1106,8 +1125,10 @@ std::string read_count_write_orca(const std::string& input_file, const std::stri
   std::cout << parser << std::endl;
 
   if( adjacent_policy::compressed::should_use_based_on(parser.n())){
+    std::cout << "Using compressed matrix implementation" << std::endl;
     graphlet_degree_vector_analysis<adjacent_policy::compressed>(parser, output_file);
   }else{
+    std::cout << "Using default matrix implementation" << std::endl;
     graphlet_degree_vector_analysis<>(parser, output_file);
   }
   return output_file;
