@@ -933,6 +933,7 @@ public:
         assert(orbit_value >= 0);
         buffer += std::to_string(orbit_value);
       }
+      buffer += "\n";
     }
     return buffer;
   } // end count_orbits
