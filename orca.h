@@ -3,6 +3,7 @@
 
 #include <string>
 #include <algorithm> // std::min, std::max, std::binary_search
+#include <utility> // std::min, std::max, std::binary_search
 #include <unordered_map> // std::unordered_map
 #include <fstream> // ofstream
 #include <iostream> // std::cout
@@ -164,6 +165,24 @@ namespace adjacent_policy
     {
       return this->_adj.at(x).at(y);
     }
+    ///
+    /// @brief Harmonize information access through different policies
+    ///
+    auto& operator()(int x, int y)
+    {
+      return this->_adj.at(x).at(y);
+    }
+    ///
+    /// @brief Sort elements in a range along the 2nd dimension
+    ///
+    void sort(int i, int j)
+    {
+      assert(i > j);
+      // iterator on first elements of ith vector second dimension
+      auto first = _adj.at(i).begin();
+      auto last  = _adj.at(i).begin() + j;
+      std::sort(first, last);
+    }
   private:
     ///
     /// @brief Build implementation
@@ -235,7 +254,24 @@ namespace adjacent_policy
     ///
     auto operator()(int x, int y) const
     {
-      return  this->_adj.at(x).at(y);
+      return  this->_adj.at(x * this->_n + y );
+    }
+    ///
+    /// @brief Harmonize information access through different policies
+    ///
+    auto& operator()(int x, int y)
+    {
+      return  this->_adj.at(x * this->_n + y );
+    }
+    ///
+    /// @brief Sort elements in a range
+    ///
+    void sort(int i, int j)
+    {
+      assert(i > j);
+      auto first = this->_adj.begin() + i;
+      auto last = this->_adj.begin() + i + j;
+      std::sort(first, last);
     }
     ///
     /// @brief Policy constructor
@@ -344,13 +380,12 @@ private:
   ///
   /// @brief Sort elements in a specific range [first, last]
   ///
-  ///
   template<typename Container>
   void sort_in_range(Container& container, int i, int j)
   {
     assert(i > j);
-    auto first = this->container.begin() + i;
-    auto last = this->container.begin() + i + j;
+    auto first = container.begin() + i;
+    auto last = container.begin() + i + j;
     std::sort(first, last);
   }
 public:
@@ -377,8 +412,8 @@ public:
       int b = it.b;
 
       // accessing policy protected data, not great but okay-ish
-      this->_adj[a][d[a]] = b;
-      this->_adj[b][d[b]] = a;
+      this->_policy(a, d[a]) = b;
+      this->_policy(b, d[b]) = a;
 
       this->_inc[a][d[a]] = std::pair<int,int>(b, i);
       this->_inc[b][d[b]] = std::pair<int,int>(a, i);
@@ -389,7 +424,7 @@ public:
 
     for (int i = 0; i < n; i++)
     {
-      sort_in_range(this->_adj, i, i + deg[i]);
+      this->_policy.sort(i, i + deg[i]);
       sort_in_range(this->_inc, i, i + deg[i]);
     }
   } // end constructor
@@ -419,7 +454,7 @@ public:
     // Read-only heavy graph properties
     auto const& deg = this->_deg;
     auto const& edges = this->_edges;
-    auto const& adj = this->_adj;
+    auto const& adj = this->_policy;
     auto const& inc = this->_inc;
     // read and write data accumulated by the algorithm
     auto& common2 = this->_common2;
@@ -449,13 +484,13 @@ public:
         frac_prev = frac;
       }
       for (int n1 = 0; n1 < deg[x]; n1++) {
-        int a = adj[x][n1];
+        int a = adj(x, n1);
         for (int n2 = n1 + 1; n2 < deg[x]; n2++) {
-          int b = adj[x][n2];
+          int b = adj(x,n2);
           PAIR ab = PAIR(a, b);
           common2[ab]++;
           for (int n3 = n2 + 1; n3 < deg[x]; n3++) {
-            int c = adj[x][n3];
+            int c = adj(x, n3);
             int st = adjacent(a, b) + adjacent(a, c) + adjacent(b, c);
             if (st < 2) continue;
             TRIPLE abc = TRIPLE(a, b, c);
@@ -471,11 +506,11 @@ public:
     for (int i = 0; i < m; i++) {
       int x = edges[i].a, y = edges[i].b;
       for (int xi = 0, yi = 0; xi < deg[x] && yi < deg[y];) {
-        if (adj[x][xi] == adj[y][yi]) {
+        if (adj(x, xi) == adj(y, yi)) {
           tri[i]++;
           xi++;
           yi++;
-        } else if (adj[x][xi] < adj[y][yi]) {
+        } else if ( adj(x,xi) < adj(y,yi) ) {
           xi++;
         } else {
           yi++;
@@ -506,11 +541,11 @@ public:
         frac_prev = frac;
       }
       for (int nx = 0; nx < deg[x]; nx++) {
-        int y = adj[x][nx];
+        int y = adj(x, nx);
         if (y >= x) break;
         nn = 0;
         for (int ny = 0; ny < deg[y]; ny++) {
-          int z = adj[y][ny];
+          int z = adj(y, ny);
           if (z >= y) break;
           if (adjacent(x, z)) {
             neigh[nn++] = z;
@@ -570,16 +605,16 @@ public:
       // smaller graphlets
       orbit[x][0] = deg[x];
       for (int nx1 = 0; nx1 < deg[x]; nx1++) {
-        int a = adj[x][nx1];
+        int a = adj(x, nx1);
         for (int nx2 = nx1 + 1; nx2 < deg[x]; nx2++) {
-          int b = adj[x][nx2];
+          int b = adj(x, nx2);
           if (adjacent(a, b))
           orbit[x][3]++;
           else
           orbit[x][2]++;
         }
         for (int na = 0; na < deg[a]; na++) {
-          int b = adj[a][na];
+          int b = adj(a, na);
           if (b != x && !adjacent(x, b)) {
             orbit[x][1]++;
             if (common_x[b] == 0) common_x_list[ncx++] = b;
@@ -606,9 +641,9 @@ public:
         for (int i = 0; i < nca; i++) common_a[common_a_list[i]] = 0;
         nca = 0;
         for (int na = 0; na < deg[a]; na++) {
-          int b = adj[a][na];
+          int b = adj(a, na);
           for (int nb = 0; nb < deg[b]; nb++) {
-            int c = adj[b][nb];
+            int c = adj(b, nb);
             if (c == a || adjacent(a, c)) continue;
             if (common_a[c] == 0) common_a_list[nca++] = c;
             common_a[c]++;

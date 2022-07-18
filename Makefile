@@ -1,5 +1,5 @@
-OBJS	= mna.o top_sim.o orca.o
-SOURCE	= mna.cpp top_sim.cpp orca.cpp
+OBJS	= mna.o top_sim.o
+SOURCE	= mna.cpp top_sim.cpp
 HEADER	= top_sim.h orca.h
 OUT	    = mna.exe
 CC      = g++
@@ -13,9 +13,6 @@ mna.o: mna.cpp
 
 top_sim.o: top_sim.cpp
 	$(CC) $(FLAGS) top_sim.cpp -std=c++20
-
-orca.o: orca.cpp
-	$(CC) $(FLAGS) orca.cpp -std=c++20
 
 clean:
 	rm -f $(OBJS) $(OUT) *.out

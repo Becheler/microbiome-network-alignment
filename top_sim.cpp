@@ -26,6 +26,7 @@ namespace top {
     6, 8, 6, 9, 5, 6, 4, 6, 6, 7,
     8, 6, 6, 8, 7, 6, 7, 7, 8, 5,
     6, 6, 4};
+
     const double alpha = 0.5;
 
     std::string G_gdvs_f;                    // the file containing G's gdvs
