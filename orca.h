@@ -129,7 +129,7 @@ namespace adjacent_policy
     // type used for composition in the ORCA host class
     using adjacent_matrix_type = std::vector<std::vector<int>>;
     // Precision for very large number of nodes
-    using big_int = adjacent_policy::big_int;
+    using big_int = typename adjacent_policy::big_int;
   private:
     // Reference on edges
     const std::vector<int>& _deg;
@@ -335,6 +335,11 @@ private:
   common2_type _common2;
   // stores the number of nodes that are adjacent to some triplets of nodes
   common3_type _common3;
+  // stores the triangles graphlets
+  std::vector<int> _triangles;
+  // stores graphlets
+  std::vector<big_int> _C5;
+
   ///
   /// @brief Return the value stored at the key, else 0
   ///
@@ -409,9 +414,11 @@ public:
   _m(m),
   _deg(std::move(deg)),
   _edges(std::move(edges)),
-  _policy(n, m, this->_edges, this->_deg),
+  _policy(n, m, _edges, _deg),
   _inc(resize_incidence_matrix(n)),
-  _orbits(resize_orbits(n))
+  _orbits(resize_orbits(n)),
+  _triangles(m),
+  _C5(n)
   {
     std::vector<int> d(n);
 
@@ -448,12 +455,155 @@ public:
     myfile.close();
   }
   ///
+  /// @brief Precompute common nodes
+  ///
+  void precompute_common_nodes()
+  {
+    // alias on policy operator (lambda function)
+    auto are_adjacent = [this](int x, int y){ return this->_policy.are_adjacent(x, y);};
+
+    // precompute common nodes
+    std::cout << "stage 1 - precomputing common nodes" << std::endl ;
+    int frac_prev = -1;
+    for (int x = 0; x < _n; x++)
+    {
+      auto frac = 100LL * x / _n;
+
+      if (frac != frac_prev)
+      {
+        std::cout << frac << std::endl;
+        frac_prev = frac;
+      }
+
+      for (int n1 = 0; n1 < _deg.at(x); n1++)
+      {
+        int a = _policy(x, n1);
+        for (int n2 = n1 + 1; n2 < _deg.at(x); n2++)
+        {
+          int b = _policy(x, n2);
+          auto ab = key_pair(a, b);
+          this->_common2[ab]++;
+          for (int n3 = n2 + 1; n3 < _deg[x]; n3++)
+          {
+            int c = _policy(x, n3);
+            int st = are_adjacent(a, b) + are_adjacent(a, c) + are_adjacent(b, c);
+            if (st < 2) continue;
+            auto abc = key_triple(a, b, c);
+            this->_common3[abc]++;
+          }
+        }
+      }
+    }
+  }
+  ///
+  /// @brief Precompute triangles that span over edges
+  ///
+  void precompute_triangles_that_span_over_edges()
+  {
+    for (int i = 0; i < _m; i++)
+    {
+      int x = _edges.at(i).a;
+      int y = _edges.at(i).b;
+      for (int xi = 0, yi = 0; xi < _deg.at(x) && yi < _deg.at(y);)
+      {
+        if (_policy(x, xi) == _policy(y, yi))
+        {
+          _triangles.at(i)++;
+          xi++;
+          yi++;
+        } else if ( _policy(x,xi) < _policy(y,yi) ) {
+          xi++;
+        } else {
+          yi++;
+        }
+      }
+    }
+  }
+  ///
+  /// @brief Count full graphlets
+  ///
+  void count_full_graphlets(int n)
+  {
+    std::cout << "stage 2 - counting full graphlets" << std::endl;
+
+    std::vector<int> neigh(n);
+    std::vector<int> neigh2(n);
+
+    // alias on policy operator (lambda function)
+    auto are_adjacent = [this](int x, int y){ return _policy.are_adjacent(x, y);};
+
+    int nn;
+    int nn2;
+    int frac_prev = -1;
+
+    for (int x = 0; x < n; x++)
+    {
+      auto frac = 100LL * x / n;
+      if (frac != frac_prev)
+      {
+        std::cout << frac << std::endl;
+        frac_prev = frac;
+      }
+      for (int nx = 0; nx < _deg.at(x); nx++)
+      {
+        int y = _policy(x, nx);
+        if (y >= x) break;
+        nn = 0;
+        for (int ny = 0; ny < _deg.at(y); ny++)
+        {
+          int z = _policy(y, ny);
+          if (z >= y) break;
+          if (are_adjacent(x, z))
+          {
+            neigh.at(nn++) = z;
+          }
+        }
+        for (int i = 0; i < nn; i++)
+        {
+          int z = neigh.at(i);
+          nn2 = 0;
+          for (int j = i + 1; j < nn; j++)
+          {
+            int zz = neigh.at(j);
+            if (are_adjacent(z, zz))
+            {
+              neigh2.at(nn2++) = zz;
+            }
+          }
+          for (int i2 = 0; i2 < nn2; i2++)
+          {
+            int zz = neigh2.at(i2);
+            for (int j2 = i2 + 1; j2 < nn2; j2++)
+            {
+              int zzz = neigh2.at(j2);
+              if (are_adjacent(zz, zzz))
+              {
+                _C5.at(x)++;
+                _C5.at(y)++;
+                _C5.at(z)++;
+                _C5.at(zz)++;
+                _C5.at(zzz)++;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  ///
+  /// @brief Set up a system of equations relating orbit counts
+  ///
+  // void set_up_equations()
+  // {
+  //
+  // }
   /// @brief Count graphlets on max 5 nodes
   ///
   void count_orbits()
   {
-    //// Interface modern C++ / old C algorithm
-
+    //
+    // Interface modern C++ / old C algorithm :
+    //
     // Type aliases
     using PAIR = key_pair;
     using TRIPLE = key_triple;
@@ -471,123 +621,29 @@ public:
     auto& orbit = this->_orbits;
     // alias on policy operator (lambda function)
     auto adjacent = [this](int x, int y){ return this->_policy.are_adjacent(x, y);};
-
-    //// Old algorithm
-
+    //
+    // Old algorithm
+    //
     clock_t startTime, endTime;
     startTime = clock();
 
     clock_t startTime_all, endTime_all;
     startTime_all = startTime;
 
-    int frac;
-    int frac_prev;
-
-    // precompute common nodes
-    printf("stage 1 - precomputing common nodes\n");
-    frac_prev = -1;
-    for (int x = 0; x < n; x++) {
-      frac = 100LL * x / n;
-      if (frac != frac_prev) {
-        printf("%d%%\r", frac);
-        frac_prev = frac;
-      }
-      for (int n1 = 0; n1 < deg[x]; n1++) {
-        int a = adj(x, n1);
-        for (int n2 = n1 + 1; n2 < deg[x]; n2++) {
-          int b = adj(x,n2);
-          PAIR ab = PAIR(a, b);
-          common2[ab]++;
-          for (int n3 = n2 + 1; n3 < deg[x]; n3++) {
-            int c = adj(x, n3);
-            int st = adjacent(a, b) + adjacent(a, c) + adjacent(b, c);
-            if (st < 2) continue;
-            TRIPLE abc = TRIPLE(a, b, c);
-            common3[abc]++;
-          }
-        }
-      }
-    }
-
-    // precompute triangles that span over edges
-    std::vector<int> tri(m);
-
-    for (int i = 0; i < m; i++) {
-      int x = edges[i].a, y = edges[i].b;
-      for (int xi = 0, yi = 0; xi < deg[x] && yi < deg[y];) {
-        if (adj(x, xi) == adj(y, yi)) {
-          tri[i]++;
-          xi++;
-          yi++;
-        } else if ( adj(x,xi) < adj(y,yi) ) {
-          xi++;
-        } else {
-          yi++;
-        }
-      }
-    }
+    precompute_common_nodes();
+    precompute_triangles_that_span_over_edges();
 
     endTime = clock();
-    printf("%.2f sec\n", (double)(endTime - startTime) / CLOCKS_PER_SEC);
+    std::cout << (double)(endTime - startTime) / CLOCKS_PER_SEC << " sec" << std::endl;
     startTime = endTime;
 
-    // count full graphlets
-    printf("stage 2 - counting full graphlets\n");
+    count_full_graphlets(n);
 
-    std::vector<big_int> C5(n);
-    std::vector<int> neigh(n);
-    std::vector<int> neigh2(n);
-
-    int nn;
-    int nn2;
-
-    frac_prev = -1;
-
-    for (int x = 0; x < n; x++) {
-      frac = 100LL * x / n;
-      if (frac != frac_prev) {
-        printf("%d%%\r", frac);
-        frac_prev = frac;
-      }
-      for (int nx = 0; nx < deg[x]; nx++) {
-        int y = adj(x, nx);
-        if (y >= x) break;
-        nn = 0;
-        for (int ny = 0; ny < deg[y]; ny++) {
-          int z = adj(y, ny);
-          if (z >= y) break;
-          if (adjacent(x, z)) {
-            neigh[nn++] = z;
-          }
-        }
-        for (int i = 0; i < nn; i++) {
-          int z = neigh[i];
-          nn2 = 0;
-          for (int j = i + 1; j < nn; j++) {
-            int zz = neigh[j];
-            if (adjacent(z, zz)) {
-              neigh2[nn2++] = zz;
-            }
-          }
-          for (int i2 = 0; i2 < nn2; i2++) {
-            int zz = neigh2[i2];
-            for (int j2 = i2 + 1; j2 < nn2; j2++) {
-              int zzz = neigh2[j2];
-              if (adjacent(zz, zzz)) {
-                C5[x]++;
-                C5[y]++;
-                C5[z]++;
-                C5[zz]++;
-                C5[zzz]++;
-              }
-            }
-          }
-        }
-      }
-    }
+    // set up a system of equations relating orbit counts
+    // solve equations
 
     endTime = clock();
-    printf("%.2f sec\n", (double)(endTime - startTime) / CLOCKS_PER_SEC);
+    std::cout << (double)(endTime - startTime) / CLOCKS_PER_SEC << " sec" << std::endl;
     startTime = endTime;
 
     std::vector<int> common_x(n);
@@ -599,12 +655,15 @@ public:
 
     // set up a system of equations relating orbit counts
     printf("stage 3 - building systems of equations\n");
-    frac_prev = -1;
+    int frac_prev = -1;
 
-    for (int x = 0; x < n; x++) {
-      frac = 100LL * x / n;
-      if (frac != frac_prev) {
-        printf("%d%%\r", frac);
+    for (int x = 0; x < n; x++)
+    {
+
+      auto frac = 100LL * x / n;
+      if (frac != frac_prev)
+      {
+        std::cout << frac << std::endl;
         frac_prev = frac;
       }
 
@@ -613,18 +672,22 @@ public:
 
       // smaller graphlets
       orbit[x][0] = deg[x];
-      for (int nx1 = 0; nx1 < deg[x]; nx1++) {
+      for (int nx1 = 0; nx1 < deg[x]; nx1++)
+      {
         int a = adj(x, nx1);
-        for (int nx2 = nx1 + 1; nx2 < deg[x]; nx2++) {
+        for (int nx2 = nx1 + 1; nx2 < deg[x]; nx2++)
+        {
           int b = adj(x, nx2);
           if (adjacent(a, b))
           orbit[x][3]++;
           else
           orbit[x][2]++;
         }
-        for (int na = 0; na < deg[a]; na++) {
+        for (int na = 0; na < deg[a]; na++)
+        {
           int b = adj(a, na);
-          if (b != x && !adjacent(x, b)) {
+          if (b != x && !adjacent(x, b))
+          {
             orbit[x][1]++;
             if (common_x[b] == 0) common_x_list[ncx++] = b;
             common_x[b]++;
@@ -671,10 +734,10 @@ public:
             // // debug
             // if (nx2 == nx1 + 6)
             //     printf("%d %d %d\n", x, a, b);
-            f_71 += (tri[xa] > 2 && tri[xb] > 2) ? (common3_get(TRIPLE(x, a, b)) - 1) : 0;
-            f_71 += (tri[xa] > 2 && tri[xc] > 2) ? (common3_get(TRIPLE(x, a, c)) - 1) : 0;
-            f_71 += (tri[xb] > 2 && tri[xc] > 2) ? (common3_get(TRIPLE(x, b, c)) - 1) : 0;
-            f_67 += tri[xa] - 2 + tri[xb] - 2 + tri[xc] - 2;
+            f_71 += (_triangles[xa] > 2 && _triangles[xb] > 2) ? (common3_get(TRIPLE(x, a, b)) - 1) : 0;
+            f_71 += (_triangles[xa] > 2 && _triangles[xc] > 2) ? (common3_get(TRIPLE(x, a, c)) - 1) : 0;
+            f_71 += (_triangles[xb] > 2 && _triangles[xc] > 2) ? (common3_get(TRIPLE(x, b, c)) - 1) : 0;
+            f_67 += _triangles[xa] - 2 + _triangles[xb] - 2 + _triangles[xc] - 2;
             f_66 += common2_get(PAIR(a, b)) - 2;
             f_66 += common2_get(PAIR(a, c)) - 2;
             f_66 += common2_get(PAIR(b, c)) - 2;
@@ -691,13 +754,13 @@ public:
             int c = inc[x][nx3].first, xc = inc[x][nx3].second;
             if (!adjacent(a, c) || adjacent(b, c)) continue;
             orbit[x][13]++;
-            f_69 += (tri[xb] > 1 && tri[xc] > 1) ? (common3_get(TRIPLE(x, b, c)) - 1) : 0;
+            f_69 += (_triangles[xb] > 1 && _triangles[xc] > 1) ? (common3_get(TRIPLE(x, b, c)) - 1) : 0;
             f_68 += common3_get(TRIPLE(a, b, c)) - 1;
             f_64 += common2_get(PAIR(b, c)) - 2;
-            f_61 += tri[xb] - 1 + tri[xc] - 1;
+            f_61 += _triangles[xb] - 1 + _triangles[xc] - 1;
             f_60 += common2_get(PAIR(a, b)) - 1;
             f_60 += common2_get(PAIR(a, c)) - 1;
-            f_55 += tri[xa] - 2;
+            f_55 += _triangles[xa] - 2;
             f_48 += deg[b] - 2 + deg[c] - 2;
             f_42 += deg[x] - 3;
             f_41 += deg[a] - 3;
@@ -712,9 +775,9 @@ public:
             int c = inc[a][na].first, ac = inc[a][na].second;
             if (c == x || adjacent(x, c) || !adjacent(b, c)) continue;
             orbit[x][12]++;
-            f_65 += (tri[ac] > 1) ? common3_get(TRIPLE(a, b, c)) : 0;
+            f_65 += (_triangles[ac] > 1) ? common3_get(TRIPLE(a, b, c)) : 0;
             f_63 += common_x[c] - 2;
-            f_59 += tri[ac] - 1 + common2_get(PAIR(b, c)) - 1;
+            f_59 += _triangles[ac] - 1 + common2_get(PAIR(b, c)) - 1;
             f_54 += common2_get(PAIR(a, b)) - 2;
             f_47 += deg[x] - 2;
             f_46 += deg[c] - 2;
@@ -730,9 +793,9 @@ public:
             int c = inc[a][na].first, ac = inc[a][na].second;
             if (c == x || adjacent(x, c) || !adjacent(b, c)) continue;
             orbit[x][8]++;
-            f_62 += (tri[ac] > 0) ? common3_get(TRIPLE(a, b, c)) : 0;
-            f_53 += tri[xa] + tri[xb];
-            f_51 += tri[ac] + common2_get(PAIR(c, b));
+            f_62 += (_triangles[ac] > 0) ? common3_get(TRIPLE(a, b, c)) : 0;
+            f_53 += _triangles[xa] + _triangles[xb];
+            f_51 += _triangles[ac] + common2_get(PAIR(c, b));
             f_50 += common_x[c] - 2;
             f_49 += common_a[b] - 2;
             f_38 += deg[x] - 2;
@@ -749,7 +812,7 @@ public:
             int c = inc[x][nx3].first, xc = inc[x][nx3].second;
             if (c == a || c == b || adjacent(a, c) || adjacent(b, c)) continue;
             orbit[x][11]++;
-            f_44 += tri[xc];
+            f_44 += _triangles[xc];
             f_33 += deg[x] - 3;
             f_30 += deg[c] - 1;
             f_26 += deg[a] - 2 + deg[b] - 2;
@@ -765,7 +828,7 @@ public:
             if (c == x || c == a || adjacent(a, c) || adjacent(x, c)) continue;
             orbit[x][10]++;
             f_52 += common_a[c] - 1;
-            f_43 += tri[bc];
+            f_43 += _triangles[bc];
             f_32 += deg[b] - 3;
             f_29 += deg[c] - 1;
             f_25 += deg[a] - 2;
@@ -780,9 +843,9 @@ public:
             int c = inc[a][na2].first, ac = inc[a][na2].second;
             if (c == x || !adjacent(b, c) || adjacent(x, c)) continue;
             orbit[x][9]++;
-            f_56 += (tri[ab] > 1 && tri[ac] > 1) ? common3_get(TRIPLE(a, b, c)) : 0;
+            f_56 += (_triangles[ab] > 1 && _triangles[ac] > 1) ? common3_get(TRIPLE(a, b, c)) : 0;
             f_45 += common2_get(PAIR(b, c)) - 1;
-            f_39 += tri[ab] - 1 + tri[ac] - 1;
+            f_39 += _triangles[ab] - 1 + _triangles[ac] - 1;
             f_31 += deg[a] - 3;
             f_28 += deg[x] - 1;
             f_24 += deg[b] - 2 + deg[c] - 2;
@@ -799,7 +862,7 @@ public:
             orbit[x][4]++;
             f_35 += common_a[c] - 1;
             f_34 += common_x[c];
-            f_27 += tri[bc];
+            f_27 += _triangles[bc];
             f_18 += deg[b] - 2;
             f_16 += deg[x] - 1;
             f_15 += deg[c] - 1;
@@ -847,7 +910,7 @@ public:
       }
 
       // solve equations
-      orbit[x][72] = C5[x];
+      orbit[x][72] = _C5[x];
       orbit[x][71] = (f_71 - 12 * orbit[x][72]) / 2;
       orbit[x][70] = (f_70 - 4 * orbit[x][72]);
       orbit[x][69] = (f_69 - 2 * orbit[x][71]) / 4;
