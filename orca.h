@@ -601,29 +601,7 @@ public:
   ///
   void count_orbits()
   {
-    //
-    // Interface modern C++ / old C algorithm :
-    //
-    // Type aliases
-    using PAIR = key_pair;
-    using TRIPLE = key_triple;
-    // cheap to copy
-    int n = this->_n;
-    int m = this->_m;
-    // Read-only heavy graph properties
-    auto const& deg = this->_deg;
-    auto const& edges = this->_edges;
-    auto const& adj = this->_policy;
-    auto const& inc = this->_inc;
-    // read and write data accumulated by the algorithm
-    auto& common2 = this->_common2;
-    auto& common3 = this->_common3;
-    auto& orbit = this->_orbits;
-    // alias on policy operator (lambda function)
-    auto adjacent = [this](int x, int y){ return this->_policy.are_adjacent(x, y);};
-    //
-    // Old algorithm
-    //
+
     clock_t startTime, endTime;
     startTime = clock();
 
@@ -637,7 +615,7 @@ public:
     std::cout << (double)(endTime - startTime) / CLOCKS_PER_SEC << " sec" << std::endl;
     startTime = endTime;
 
-    count_full_graphlets(n);
+    count_full_graphlets(_n);
 
     // set up a system of equations relating orbit counts
     // solve equations
@@ -646,51 +624,53 @@ public:
     std::cout << (double)(endTime - startTime) / CLOCKS_PER_SEC << " sec" << std::endl;
     startTime = endTime;
 
-    std::vector<int> common_x(n);
-    std::vector<int> common_x_list(n);
+    std::vector<int> common_x(_n);
+    std::vector<int> common_x_list(_n);
     int ncx = 0;
-    std::vector<int> common_a(n);
-    std::vector<int> common_a_list(n);
+    std::vector<int> common_a(_n);
+    std::vector<int> common_a_list(_n);
     int nca = 0;
 
     // set up a system of equations relating orbit counts
     printf("stage 3 - building systems of equations\n");
     int frac_prev = -1;
 
-    for (int x = 0; x < n; x++)
+    for (int x = 0; x < _n; x++)
     {
 
-      auto frac = 100LL * x / n;
+      auto frac = 100LL * x / _n;
       if (frac != frac_prev)
       {
         std::cout << frac << std::endl;
         frac_prev = frac;
       }
 
-      for (int i = 0; i < ncx; i++) common_x[common_x_list[i]] = 0;
+      for (int i = 0; i < ncx; i++) common_x.at(common_x_list.at(i)) = 0;
       ncx = 0;
 
       // smaller graphlets
-      orbit[x][0] = deg[x];
-      for (int nx1 = 0; nx1 < deg[x]; nx1++)
+      _orbits.at(x).at(0) = _deg.at(x);
+      for (int nx1 = 0; nx1 < _deg.at(x); nx1++)
       {
-        int a = adj(x, nx1);
-        for (int nx2 = nx1 + 1; nx2 < deg[x]; nx2++)
+        int a = _policy(x, nx1);
+
+        for (int nx2 = nx1 + 1; nx2 < _deg.at(x); nx2++)
         {
-          int b = adj(x, nx2);
-          if (adjacent(a, b))
-          orbit[x][3]++;
+          int b = _policy(x, nx2);
+          if (_policy.are_adjacent(a, b))
+            _orbits.at(x).at(3)++;
           else
-          orbit[x][2]++;
+            _orbits.at(x).at(2)++;
         }
-        for (int na = 0; na < deg[a]; na++)
+
+        for (int na = 0; na < _deg.at(a); na++)
         {
-          int b = adj(a, na);
-          if (b != x && !adjacent(x, b))
+          int b = _policy(a, na);
+          if (b != x && !_policy.are_adjacent(x, b))
           {
-            orbit[x][1]++;
-            if (common_x[b] == 0) common_x_list[ncx++] = b;
-            common_x[b]++;
+            _orbits.at(x).at(1)++;
+            if (common_x.at(b) == 0) common_x_list.at(ncx++) = b;
+            common_x.at(b)++;
           }
         }
       }
@@ -707,208 +687,291 @@ public:
       big_int f_22 = 0, f_20 = 0, f_19 = 0;                                                              // 6
       big_int f_23 = 0, f_21 = 0;                                                                        // 7
 
-      for (int nx1 = 0; nx1 < deg[x]; nx1++) {
-        int a = inc[x][nx1].first, xa = inc[x][nx1].second;
+      for (int nx1 = 0; nx1 < _deg.at(x); nx1++)
+      {
+        auto a = _inc.at(x).at(nx1).first;
+        auto xa = _inc.at(x).at(nx1).second;
 
-        for (int i = 0; i < nca; i++) common_a[common_a_list[i]] = 0;
+        for (int i = 0; i < nca; i++) common_a.at(common_a_list.at(i)) = 0;
         nca = 0;
-        for (int na = 0; na < deg[a]; na++) {
-          int b = adj(a, na);
-          for (int nb = 0; nb < deg[b]; nb++) {
-            int c = adj(b, nb);
-            if (c == a || adjacent(a, c)) continue;
-            if (common_a[c] == 0) common_a_list[nca++] = c;
-            common_a[c]++;
+
+        for (int na = 0; na < _deg.at(a); na++)
+        {
+          auto b = _policy(a, na);
+          for (int nb = 0; nb < _deg.at(b); nb++)
+          {
+            int c = _policy(b, nb);
+
+            if (c == a || _policy.are_adjacent(a, c)) continue;
+
+            if (common_a.at(c) == 0) common_a_list.at(nca++) = c;
+            common_a.at(c)++;
           }
         }
 
         // x = orbit-14 (tetrahedron)
-        for (int nx2 = nx1 + 1; nx2 < deg[x]; nx2++) {
-          int b = inc[x][nx2].first, xb = inc[x][nx2].second;
-          if (!adjacent(a, b)) continue;
-          for (int nx3 = nx2 + 1; nx3 < deg[x]; nx3++) {
-            int c = inc[x][nx3].first, xc = inc[x][nx3].second;
-            if (!adjacent(a, c) || !adjacent(b, c)) continue;
-            orbit[x][14]++;
-            f_70 += common3_get(TRIPLE(a, b, c)) - 1;
+        for (int nx2 = nx1 + 1; nx2 < _deg.at(x); nx2++)
+        {
+          auto b = _inc.at(x).at(nx2).first;
+          auto xb = _inc[x][nx2].second;
+
+          if (!_policy.are_adjacent(a, b)) continue;
+
+          for (int nx3 = nx2 + 1; nx3 < _deg.at(x); nx3++)
+          {
+            auto c = _inc.at(x).at(nx3).first;
+            auto xc = _inc.at(x).at(nx3).second;
+
+            if (!_policy.are_adjacent(a, c) || !_policy.are_adjacent(b, c)) continue;
+
+            _orbits.at(x).at(14)++;
+            f_70 += common3_get(key_triple(a, b, c)) - 1;
+
             // // debug
             // if (nx2 == nx1 + 6)
             //     printf("%d %d %d\n", x, a, b);
-            f_71 += (_triangles[xa] > 2 && _triangles[xb] > 2) ? (common3_get(TRIPLE(x, a, b)) - 1) : 0;
-            f_71 += (_triangles[xa] > 2 && _triangles[xc] > 2) ? (common3_get(TRIPLE(x, a, c)) - 1) : 0;
-            f_71 += (_triangles[xb] > 2 && _triangles[xc] > 2) ? (common3_get(TRIPLE(x, b, c)) - 1) : 0;
-            f_67 += _triangles[xa] - 2 + _triangles[xb] - 2 + _triangles[xc] - 2;
-            f_66 += common2_get(PAIR(a, b)) - 2;
-            f_66 += common2_get(PAIR(a, c)) - 2;
-            f_66 += common2_get(PAIR(b, c)) - 2;
-            f_58 += deg[x] - 3;
-            f_57 += deg[a] - 3 + deg[b] - 3 + deg[c] - 3;
+
+            f_71 += (_triangles.at(xa) > 2 && _triangles.at(xb) > 2) ? (common3_get(key_triple(x, a, b)) - 1) : 0;
+            f_71 += (_triangles.at(xa) > 2 && _triangles.at(xc) > 2) ? (common3_get(key_triple(x, a, c)) - 1) : 0;
+            f_71 += (_triangles.at(xb) > 2 && _triangles.at(xc) > 2) ? (common3_get(key_triple(x, b, c)) - 1) : 0;
+            f_67 += _triangles.at(xa) - 2 + _triangles.at(xb) - 2 + _triangles.at(xc) - 2;
+            f_66 += common2_get(key_pair(a, b)) - 2;
+            f_66 += common2_get(key_pair(a, c)) - 2;
+            f_66 += common2_get(key_pair(b, c)) - 2;
+            f_58 += _deg.at(x) - 3;
+            f_57 += _deg.at(a) - 3 + _deg.at(b) - 3 + _deg.at(c) - 3;
           }
         }
 
         // x = orbit-13 (diamond)
-        for (int nx2 = 0; nx2 < deg[x]; nx2++) {
-          int b = inc[x][nx2].first, xb = inc[x][nx2].second;
-          if (!adjacent(a, b)) continue;
-          for (int nx3 = nx2 + 1; nx3 < deg[x]; nx3++) {
-            int c = inc[x][nx3].first, xc = inc[x][nx3].second;
-            if (!adjacent(a, c) || adjacent(b, c)) continue;
-            orbit[x][13]++;
-            f_69 += (_triangles[xb] > 1 && _triangles[xc] > 1) ? (common3_get(TRIPLE(x, b, c)) - 1) : 0;
-            f_68 += common3_get(TRIPLE(a, b, c)) - 1;
-            f_64 += common2_get(PAIR(b, c)) - 2;
-            f_61 += _triangles[xb] - 1 + _triangles[xc] - 1;
-            f_60 += common2_get(PAIR(a, b)) - 1;
-            f_60 += common2_get(PAIR(a, c)) - 1;
-            f_55 += _triangles[xa] - 2;
-            f_48 += deg[b] - 2 + deg[c] - 2;
-            f_42 += deg[x] - 3;
-            f_41 += deg[a] - 3;
+        for (int nx2 = 0; nx2 < _deg.at(x); nx2++)
+        {
+          auto b = _inc.at(x).at(nx2).first;
+          auto xb = _inc.at(x).at(nx2).second;
+
+          if (!_policy.are_adjacent(a, b)) continue;
+
+          for (int nx3 = nx2 + 1; nx3 < _deg.at(x); nx3++)
+          {
+            auto c = _inc.at(x).at(nx3).first;
+            auto xc = _inc.at(x).at(nx3).second;
+
+            if (!_policy.are_adjacent(a, c) || _policy.are_adjacent(b, c)) continue;
+
+            _orbits.at(x).at(13)++;
+            f_69 += (_triangles.at(xb) > 1 && _triangles.at(xc) > 1) ? (common3_get(key_triple(x, b, c)) - 1) : 0;
+            f_68 += common3_get(key_triple(a, b, c)) - 1;
+            f_64 += common2_get(key_pair(b, c)) - 2;
+            f_61 += _triangles.at(xb) - 1 + _triangles.at(xc) - 1;
+            f_60 += common2_get(key_pair(a, b)) - 1;
+            f_60 += common2_get(key_pair(a, c)) - 1;
+            f_55 += _triangles.at(xa) - 2;
+            f_48 += _deg.at(b) - 2 + _deg.at(c) - 2;
+            f_42 += _deg.at(x) - 3;
+            f_41 += _deg.at(a) - 3;
           }
         }
 
         // x = orbit-12 (diamond)
-        for (int nx2 = nx1 + 1; nx2 < deg[x]; nx2++) {
-          int b = inc[x][nx2].first;
-          if (!adjacent(a, b)) continue;
-          for (int na = 0; na < deg[a]; na++) {
-            int c = inc[a][na].first, ac = inc[a][na].second;
-            if (c == x || adjacent(x, c) || !adjacent(b, c)) continue;
-            orbit[x][12]++;
-            f_65 += (_triangles[ac] > 1) ? common3_get(TRIPLE(a, b, c)) : 0;
-            f_63 += common_x[c] - 2;
-            f_59 += _triangles[ac] - 1 + common2_get(PAIR(b, c)) - 1;
-            f_54 += common2_get(PAIR(a, b)) - 2;
-            f_47 += deg[x] - 2;
-            f_46 += deg[c] - 2;
-            f_40 += deg[a] - 3 + deg[b] - 3;
+        for (int nx2 = nx1 + 1; nx2 < _deg.at(x); nx2++)
+        {
+          int b = _inc.at(x).at(nx2).first;
+
+          if (!_policy.are_adjacent(a, b)) continue;
+
+          for (int na = 0; na < _deg.at(a); na++)
+          {
+            auto c = _inc.at(a).at(na).first;
+            auto ac =_inc.at(a).at(na).second;
+
+            if (c == x || _policy.are_adjacent(x, c) || !_policy.are_adjacent(b, c)) continue;
+
+            _orbits.at(x).at(12)++;
+            f_65 += (_triangles.at(ac) > 1) ? common3_get(key_triple(a, b, c)) : 0;
+            f_63 += common_x.at(c) - 2;
+            f_59 += _triangles.at(ac) - 1 + common2_get(key_pair(b, c)) - 1;
+            f_54 += common2_get(key_pair(a, b)) - 2;
+            f_47 += _deg.at(x) - 2;
+            f_46 += _deg.at(c) - 2;
+            f_40 += _deg.at(a) - 3 + _deg.at(b) - 3;
           }
         }
 
         // x = orbit-8 (cycle)
-        for (int nx2 = nx1 + 1; nx2 < deg[x]; nx2++) {
-          int b = inc[x][nx2].first, xb = inc[x][nx2].second;
-          if (adjacent(a, b)) continue;
-          for (int na = 0; na < deg[a]; na++) {
-            int c = inc[a][na].first, ac = inc[a][na].second;
-            if (c == x || adjacent(x, c) || !adjacent(b, c)) continue;
-            orbit[x][8]++;
-            f_62 += (_triangles[ac] > 0) ? common3_get(TRIPLE(a, b, c)) : 0;
-            f_53 += _triangles[xa] + _triangles[xb];
-            f_51 += _triangles[ac] + common2_get(PAIR(c, b));
-            f_50 += common_x[c] - 2;
-            f_49 += common_a[b] - 2;
-            f_38 += deg[x] - 2;
-            f_37 += deg[a] - 2 + deg[b] - 2;
-            f_36 += deg[c] - 2;
+        for (int nx2 = nx1 + 1; nx2 < _deg.at(x); nx2++)
+        {
+          auto b = _inc.at(x).at(nx2).first;
+          auto xb = _inc.at(x).at(nx2).second;
+
+          if (_policy.are_adjacent(a, b)) continue;
+
+          for (int na = 0; na < _deg.at(a); na++)
+          {
+            auto c = _inc.at(a).at(na).first;
+            auto ac = _inc.at(a).at(na).second;
+
+            if (c == x || _policy.are_adjacent(x, c) || !_policy.are_adjacent(b, c)) continue;
+
+            _orbits.at(x).at(8)++;
+            f_62 += (_triangles.at(ac) > 0) ? common3_get(key_triple(a, b, c)) : 0;
+            f_53 += _triangles.at(xa) + _triangles.at(xb);
+            f_51 += _triangles.at(ac) + common2_get(key_pair(c, b));
+            f_50 += common_x.at(c) - 2;
+            f_49 += common_a.at(b) - 2;
+            f_38 += _deg.at(x) - 2;
+            f_37 += _deg.at(a) - 2 + _deg.at(b) - 2;
+            f_36 += _deg.at(c) - 2;
           }
         }
 
         // x = orbit-11 (paw)
-        for (int nx2 = nx1 + 1; nx2 < deg[x]; nx2++) {
-          int b = inc[x][nx2].first;
-          if (!adjacent(a, b)) continue;
-          for (int nx3 = 0; nx3 < deg[x]; nx3++) {
-            int c = inc[x][nx3].first, xc = inc[x][nx3].second;
-            if (c == a || c == b || adjacent(a, c) || adjacent(b, c)) continue;
-            orbit[x][11]++;
-            f_44 += _triangles[xc];
-            f_33 += deg[x] - 3;
-            f_30 += deg[c] - 1;
-            f_26 += deg[a] - 2 + deg[b] - 2;
+        for (int nx2 = nx1 + 1; nx2 < _deg.at(x); nx2++)
+        {
+          int b = _inc.at(x).at(nx2).first;
+
+          if (!_policy.are_adjacent(a, b)) continue;
+
+          for (int nx3 = 0; nx3 < _deg.at(x); nx3++)
+          {
+            auto c = _inc.at(x).at(nx3).first;
+            auto xc = _inc.at(x).at(nx3).second;
+
+            if (c == a || c == b || _policy.are_adjacent(a, c) || _policy.are_adjacent(b, c)) continue;
+
+            _orbits.at(x).at(11)++;
+            f_44 += _triangles.at(xc);
+            f_33 += _deg.at(x) - 3;
+            f_30 += _deg.at(c) - 1;
+            f_26 += _deg.at(a) - 2 + _deg.at(b) - 2;
           }
         }
 
         // x = orbit-10 (paw)
-        for (int nx2 = 0; nx2 < deg[x]; nx2++) {
-          int b = inc[x][nx2].first;
-          if (!adjacent(a, b)) continue;
-          for (int nb = 0; nb < deg[b]; nb++) {
-            int c = inc[b][nb].first, bc = inc[b][nb].second;
-            if (c == x || c == a || adjacent(a, c) || adjacent(x, c)) continue;
-            orbit[x][10]++;
-            f_52 += common_a[c] - 1;
-            f_43 += _triangles[bc];
-            f_32 += deg[b] - 3;
-            f_29 += deg[c] - 1;
-            f_25 += deg[a] - 2;
+        for (int nx2 = 0; nx2 < _deg.at(x); nx2++)
+        {
+          int b = _inc.at(x).at(nx2).first;
+
+          if (!_policy.are_adjacent(a, b)) continue;
+
+          for (int nb = 0; nb < _deg.at(b); nb++)
+          {
+            auto c = _inc.at(b).at(nb).first;
+            auto bc = _inc.at(b).at(nb).second;
+
+            if (c == x || c == a || _policy.are_adjacent(a, c) || _policy.are_adjacent(x, c)) continue;
+
+            _orbits.at(x).at(10)++;
+            f_52 += common_a.at(c) - 1;
+            f_43 += _triangles.at(bc);
+            f_32 += _deg.at(b) - 3;
+            f_29 += _deg.at(c) - 1;
+            f_25 += _deg.at(a) - 2;
           }
         }
 
         // x = orbit-9 (paw)
-        for (int na1 = 0; na1 < deg[a]; na1++) {
-          int b = inc[a][na1].first, ab = inc[a][na1].second;
-          if (b == x || adjacent(x, b)) continue;
-          for (int na2 = na1 + 1; na2 < deg[a]; na2++) {
-            int c = inc[a][na2].first, ac = inc[a][na2].second;
-            if (c == x || !adjacent(b, c) || adjacent(x, c)) continue;
-            orbit[x][9]++;
-            f_56 += (_triangles[ab] > 1 && _triangles[ac] > 1) ? common3_get(TRIPLE(a, b, c)) : 0;
-            f_45 += common2_get(PAIR(b, c)) - 1;
-            f_39 += _triangles[ab] - 1 + _triangles[ac] - 1;
-            f_31 += deg[a] - 3;
-            f_28 += deg[x] - 1;
-            f_24 += deg[b] - 2 + deg[c] - 2;
+        for (int na1 = 0; na1 < _deg.at(a); na1++)
+        {
+          auto b = _inc.at(a).at(na1).first;
+          auto ab = _inc.at(a).at(na1).second;
+
+          if (b == x || _policy.are_adjacent(x, b)) continue;
+
+          for (int na2 = na1 + 1; na2 < _deg.at(a); na2++)
+          {
+            auto c = _inc.at(a).at(na2).first;
+            auto ac = _inc.at(a).at(na2).second;
+
+            if (c == x || !_policy.are_adjacent(b, c) || _policy.are_adjacent(x, c)) continue;
+
+            _orbits.at(x).at(9)++;
+            f_56 += (_triangles.at(ab) > 1 && _triangles.at(ac) > 1) ? common3_get(key_triple(a, b, c)) : 0;
+            f_45 += common2_get(key_pair(b, c)) - 1;
+            f_39 += _triangles.at(ab) - 1 + _triangles.at(ac) - 1;
+            f_31 += _deg.at(a) - 3;
+            f_28 += _deg.at(x) - 1;
+            f_24 += _deg.at(b) - 2 + _deg.at(c) - 2;
           }
         }
 
         // x = orbit-4 (path)
-        for (int na = 0; na < deg[a]; na++) {
-          int b = inc[a][na].first;
-          if (b == x || adjacent(x, b)) continue;
-          for (int nb = 0; nb < deg[b]; nb++) {
-            int c = inc[b][nb].first, bc = inc[b][nb].second;
-            if (c == a || adjacent(a, c) || adjacent(x, c)) continue;
-            orbit[x][4]++;
-            f_35 += common_a[c] - 1;
-            f_34 += common_x[c];
-            f_27 += _triangles[bc];
-            f_18 += deg[b] - 2;
-            f_16 += deg[x] - 1;
-            f_15 += deg[c] - 1;
+        for (int na = 0; na < _deg.at(a); na++)
+        {
+          auto b = _inc.at(a).at(na).first;
+
+          if (b == x || _policy.are_adjacent(x, b)) continue;
+
+          for (int nb = 0; nb < _deg.at(b); nb++)
+          {
+            int c = _inc.at(b).at(nb).first;
+            auto bc = _inc.at(b).at(nb).second;
+
+            if (c == a || _policy.are_adjacent(a, c) || _policy.are_adjacent(x, c)) continue;
+
+            _orbits.at(x).at(4)++;
+            f_35 += common_a.at(c) - 1;
+            f_34 += common_x.at(c);
+            f_27 += _triangles.at(bc);
+            f_18 += _deg.at(b) - 2;
+            f_16 += _deg.at(x) - 1;
+            f_15 += _deg.at(c) - 1;
           }
         }
 
         // x = orbit-5 (path)
-        for (int nx2 = 0; nx2 < deg[x]; nx2++) {
-          int b = inc[x][nx2].first;
-          if (b == a || adjacent(a, b)) continue;
-          for (int nb = 0; nb < deg[b]; nb++) {
-            int c = inc[b][nb].first;
-            if (c == x || adjacent(a, c) || adjacent(x, c)) continue;
-            orbit[x][5]++;
-            f_17 += deg[a] - 1;
+        for (int nx2 = 0; nx2 < _deg.at(x); nx2++)
+        {
+          int b = _inc.at(x).at(nx2).first;
+
+          if (b == a || _policy.are_adjacent(a, b)) continue;
+
+          for (int nb = 0; nb < _deg.at(b); nb++)
+          {
+            int c = _inc.at(b).at(nb).first;
+
+            if (c == x || _policy.are_adjacent(a, c) || _policy.are_adjacent(x, c)) continue;
+
+            _orbits.at(x).at(5)++;
+            f_17 += _deg.at(a) - 1;
           }
         }
 
         // x = orbit-6 (claw)
-        for (int na1 = 0; na1 < deg[a]; na1++) {
-          int b = inc[a][na1].first;
-          if (b == x || adjacent(x, b)) continue;
-          for (int na2 = na1 + 1; na2 < deg[a]; na2++) {
-            int c = inc[a][na2].first;
-            if (c == x || adjacent(x, c) || adjacent(b, c)) continue;
-            orbit[x][6]++;
-            f_22 += deg[a] - 3;
-            f_20 += deg[x] - 1;
-            f_19 += deg[b] - 1 + deg[c] - 1;
+        for (int na1 = 0; na1 < _deg.at(a); na1++)
+        {
+          int b = _inc.at(a).at(na1).first;
+
+          if (b == x || _policy.are_adjacent(x, b)) continue;
+
+          for (int na2 = na1 + 1; na2 < _deg.at(a); na2++)
+          {
+            int c = _inc.at(a).at(na2).first;
+            if (c == x || _policy.are_adjacent(x, c) || _policy.are_adjacent(b, c)) continue;
+            _orbits.at(x).at(6)++;
+            f_22 += _deg.at(a) - 3;
+            f_20 += _deg.at(x) - 1;
+            f_19 += _deg.at(b) - 1 + _deg.at(c) - 1;
           }
         }
 
         // x = orbit-7 (claw)
-        for (int nx2 = nx1 + 1; nx2 < deg[x]; nx2++) {
-          int b = inc[x][nx2].first;
-          if (adjacent(a, b)) continue;
-          for (int nx3 = nx2 + 1; nx3 < deg[x]; nx3++) {
-            int c = inc[x][nx3].first;
-            if (adjacent(a, c) || adjacent(b, c)) continue;
-            orbit[x][7]++;
-            f_23 += deg[x] - 3;
-            f_21 += deg[a] - 1 + deg[b] - 1 + deg[c] - 1;
+        for (int nx2 = nx1 + 1; nx2 < _deg.at(x); nx2++)
+        {
+          int b = _inc.at(x).at(nx2).first;
+          if (_policy.are_adjacent(a, b)) continue;
+          for (int nx3 = nx2 + 1; nx3 < _deg.at(x); nx3++)
+          {
+            int c = _inc.at(x).at(nx3).first;
+            if (_policy.are_adjacent(a, c) || _policy.are_adjacent(b, c)) continue;
+            _orbits.at(x).at(7)++;
+            f_23 += _deg.at(x) - 3;
+            f_21 += _deg.at(a) - 1 + _deg.at(b) - 1 + _deg.at(c) - 1;
           }
         }
       }
 
+      // read and write data accumulated by the algorithm
+      auto& orbit = this->_orbits;
       // solve equations
       orbit[x][72] = _C5[x];
       orbit[x][71] = (f_71 - 12 * orbit[x][72]) / 2;
